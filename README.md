@@ -43,7 +43,7 @@ The extension isn't on the Chrome Web Store yet — load it manually in a minute
 
 1. **Clone or download** this repo:
    ```bash
-   git clone [https://github.com/kaushikappani/TL-DR](https://github.com/kaushikappani/TL-DR.git)
+   git clone https://github.com/kaushikappani/TL-DR
    ```
    _(or click **Code → Download ZIP** and unzip it)_
 2. Open **`chrome://extensions`** in Chrome (or `edge://extensions` in Edge).
