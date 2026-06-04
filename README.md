@@ -18,6 +18,7 @@ A Chrome extension that summarizes any web page or news article and lets you **a
 ##  Features
 
 -  **One-click summary** — instant TL;DR + key takeaways for any page.
+-  **Works on PDFs too** — summarize and question online *or* local PDFs (including scanned ones — Gemini reads the file directly).
 -  **Ask questions** — chat with the page; answers are grounded in its actual content, with conversation history.
 -  **Right-click menu** — *"Summarize this page"* anywhere, or *"Summarize selection"* on highlighted text.
 -  **Floating panel** — a draggable, minimizable panel that lives on the page, so you never lose your place when you click away.
@@ -57,15 +58,21 @@ The extension isn't on the Chrome Web Store yet — load it manually in a minute
 2. Click **Create API key** and copy it.
 3. Paste it into the extension's Settings. The free tier is plenty for everyday use.
 
+###  Summarizing local PDFs (optional)
+
+To summarize PDFs opened from your computer (`file://…`), turn on **Allow access to file URLs**
+for this extension in `chrome://extensions` → **Details**. Web PDFs (`http(s)://…`) work without it.
+
 ---
 
 ##  Usage
 
 | How | What |
 |-----|------|
-| **Toolbar popup** | Click the icon → **Summarize this page** → ask questions or use the suggestion chips. |
+| **Toolbar popup** | Click the icon → **Summarize this page / PDF** → ask questions or use the suggestion chips. |
 | **Floating panel** | Popup → **Open floating panel ↗**, or right-click the page → **Summarize this page**. Drag by the header; **–** minimizes, **✕** closes. |
 | **Selection** | Highlight text → right-click → **Summarize selection** (summarizes just that text). |
+| **PDFs** | Open any PDF and click the toolbar icon → **Summarize this PDF**. _(Use the popup for PDFs — the floating panel/right-click aren't available inside Chrome's PDF viewer.)_ |
 
 >  The toolbar **popup** always closes when you click the page — that's how Chrome popups work. Use the **floating panel** when you want it to stay open while you read.
 

@@ -96,20 +96,47 @@ export function buildPageContext(page) {
     .join("\n");
 }
 
-/** Generate a structured summary of a page. */
+// A PDF page carries { pdf: { mimeType, data } } where data is base64 bytes.
+function isPdf(page) {
+  return !!(page && page.pdf && page.pdf.data);
+}
+
+/** The "parts" that describe the source document for a turn. */
+function sourceParts(page, leadText) {
+  if (isPdf(page)) {
+    return [
+      { text: leadText },
+      { inlineData: { mimeType: page.pdf.mimeType || "application/pdf", data: page.pdf.data } },
+    ];
+  }
+  return [{ text: leadText + "\n\n" + buildPageContext(page) }];
+}
+
+/** Generate a structured summary of a page or PDF. */
 export async function summarizePage(page) {
   const system =
-    "You are a concise reading assistant. Summarize web articles clearly for a busy reader. " +
+    "You are a concise reading assistant. Summarize documents clearly for a busy reader. " +
     "Use plain language. Do not invent facts that are not in the content.";
 
-  const prompt =
-    buildPageContext(page) +
-    "\n\n---\nWrite a summary of the page above in this exact format:\n\n" +
+  const instructions =
+    "\n\n---\nWrite a summary of the document above in this exact format:\n\n" +
     "**TL;DR:** one or two sentences capturing the core point.\n\n" +
     "**Key points:**\n- 3 to 6 short bullet points of the most important takeaways.\n\n" +
     "Keep it tight. No preamble, just the summary.";
 
-  return generate([{ role: "user", parts: [{ text: prompt }] }], {
+  let parts;
+  if (isPdf(page)) {
+    // PDF goes in as inline data; instructions follow it.
+    parts = [
+      { text: `Document title: ${page.title || "PDF"}` },
+      { inlineData: { mimeType: page.pdf.mimeType || "application/pdf", data: page.pdf.data } },
+      { text: instructions },
+    ];
+  } else {
+    parts = [{ text: buildPageContext(page) + instructions }];
+  }
+
+  return generate([{ role: "user", parts }], {
     systemInstruction: system,
     temperature: 0.3,
     maxOutputTokens: 800,
@@ -117,30 +144,25 @@ export async function summarizePage(page) {
 }
 
 /**
- * Answer a question about the page given prior chat history.
- * @param {Object} page    extracted page data
+ * Answer a question about the page/PDF given prior chat history.
+ * @param {Object} page    extracted page data (may carry a pdf)
  * @param {Array}  history [{ role: 'user'|'model', text }]
  */
 export async function answerQuestion(page, history) {
   const system =
-    "You answer questions strictly about the provided web page content. " +
+    "You answer questions strictly about the provided document content. " +
     "If the answer is not in the content, say so plainly instead of guessing. " +
-    "Be concise and cite specifics from the page when relevant.";
+    "Be concise and cite specifics from the document when relevant.";
+
+  const lead = isPdf(page)
+    ? "Here is the PDF document you must answer questions about:"
+    : "Here is the web page you must answer questions about:";
 
   const contents = [
-    {
-      role: "user",
-      parts: [
-        {
-          text:
-            "Here is the web page you must answer questions about:\n\n" +
-            buildPageContext(page),
-        },
-      ],
-    },
+    { role: "user", parts: sourceParts(page, lead) },
     {
       role: "model",
-      parts: [{ text: "Got it. I've read the page and will answer your questions about it." }],
+      parts: [{ text: "Got it. I've read the document and will answer your questions about it." }],
     },
     ...history.map((m) => ({
       role: m.role,

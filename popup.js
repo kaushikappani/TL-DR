@@ -24,9 +24,10 @@ const els = {
   modelTag: document.getElementById("modelTag"),
 };
 
-// In-memory state for this popup session.
+// In-memory state for this popup session. (Page content lives in the worker's
+// per-tab cache; the popup only tracks chat history + display flags.)
 const state = {
-  page: null,        // extracted page data
+  isPdf: false,
   history: [],       // [{ role: 'user'|'model', text }]
   busy: false,
   rawSummary: "",
@@ -125,29 +126,34 @@ async function init() {
     return;
   }
 
-  // Pre-extract the page so we can show its title and enable chat.
-  const ext = await send({ type: "EXTRACT" });
-  if (ext.ok) {
-    state.page = ext.page;
-    els.pageTitle.textContent = ext.page.title;
-    els.pageMeta.textContent = `${ext.page.siteName} · ${ext.page.wordCount} words`;
+  // Lightweight page info for the header (no PDF download until summarize).
+  const info = await send({ type: "PAGE_INFO" });
+  if (info.ok) {
+    const i = info.info;
+    state.isPdf = i.isPdf;
+    els.pageTitle.textContent = i.title;
+    els.pageMeta.textContent = i.isPdf ? `${i.siteName} · PDF` : i.siteName;
     els.pageInfo.classList.remove("hidden");
-  } else {
-    showStatus(ext.error, "error");
-    els.summarizeBtn.disabled = true;
+    if (i.restricted) {
+      showStatus("This page can't be read (browser/internal page).", "error");
+      els.summarizeBtn.disabled = true;
+      els.floatBtn.classList.add("hidden");
+    } else {
+      els.summarizeBtn.textContent = i.isPdf ? "Summarize this PDF" : "Summarize this page";
+      // The floating panel can't be injected into Chrome's PDF viewer.
+      if (i.isPdf) els.floatBtn.classList.add("hidden");
+    }
   }
 }
 
 async function doSummarize() {
   if (state.busy) return;
   setBusy(true);
-  showStatus("Reading and summarizing the page…");
+  showStatus(state.isPdf ? "Reading and summarizing the PDF…" : "Reading and summarizing the page…");
   els.summarySection.classList.add("hidden");
 
-  // Always re-extract the LIVE page now, instead of reusing the snapshot taken
-  // when the popup opened. The page may have changed since (e.g. opening a
-  // different email in Gmail, or any single-page-app view switch), and reusing
-  // the stale snapshot would summarize the wrong content.
+  // Re-read the LIVE page/PDF each time (handles SPA/email view changes). The
+  // background worker holds any PDF bytes; we don't ship them through messaging.
   const resp = await send({ type: "SUMMARIZE" });
   setBusy(false);
 
@@ -162,12 +168,14 @@ async function doSummarize() {
   }
 
   hideStatus();
-  // Replace the cached page with the freshly-extracted one and reset chat,
-  // since any prior Q&A history was about the previous content.
+  // Refresh the header from the freshly-extracted page and reset chat, since
+  // any prior Q&A was about the previous content.
   if (resp.page) {
-    state.page = resp.page;
+    state.isPdf = !!resp.page.isPdf;
     els.pageTitle.textContent = resp.page.title;
-    els.pageMeta.textContent = `${resp.page.siteName} · ${resp.page.wordCount} words`;
+    els.pageMeta.textContent = resp.page.isPdf
+      ? `${resp.page.siteName} · PDF${resp.page.sizeKB ? ` · ${resp.page.sizeKB} KB` : ""}`
+      : `${resp.page.siteName}${resp.page.wordCount ? ` · ${resp.page.wordCount} words` : ""}`;
     els.pageInfo.classList.remove("hidden");
   }
   state.history = [];
@@ -183,10 +191,6 @@ async function doSummarize() {
 
 async function ask(question) {
   if (state.busy || !question.trim()) return;
-  if (!state.page) {
-    showStatus("Page not loaded yet.", "error");
-    return;
-  }
 
   els.suggestions.classList.add("hidden");
   addMessage("user", question);
@@ -196,9 +200,9 @@ async function ask(question) {
   setBusy(true);
   const thinking = addMessage("model", "Thinking…", { thinking: true });
 
+  // The background reuses the cached page (incl. PDF bytes) for this tab.
   const resp = await send({
     type: "ASK",
-    page: state.page,
     history: state.history,
   });
 
