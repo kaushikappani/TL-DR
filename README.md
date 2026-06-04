@@ -15,19 +15,19 @@ A Chrome extension that summarizes any web page or news article and lets you **a
 
 ---
 
-## ✨ Features
+##  Features
 
-- 📝 **One-click summary** — instant TL;DR + key takeaways for any page.
-- 💬 **Ask questions** — chat with the page; answers are grounded in its actual content, with conversation history.
-- 🖱️ **Right-click menu** — *"Summarize this page"* anywhere, or *"Summarize selection"* on highlighted text.
-- 🪟 **Floating panel** — a draggable, minimizable panel that lives on the page, so you never lose your place when you click away.
-- 🧹 **Smart extraction** — pulls the real article body and skips nav, ads, comments, and clutter.
-- ⚡ **Model picker** — choose between Gemini Flash (fast & free-tier friendly) and Pro (most capable).
-- 🔒 **Private by design** — your API key stays in your browser; page content goes only to Google's Gemini API. No tracking, no servers.
+-  **One-click summary** — instant TL;DR + key takeaways for any page.
+-  **Ask questions** — chat with the page; answers are grounded in its actual content, with conversation history.
+-  **Right-click menu** — *"Summarize this page"* anywhere, or *"Summarize selection"* on highlighted text.
+-  **Floating panel** — a draggable, minimizable panel that lives on the page, so you never lose your place when you click away.
+-  **Smart extraction** — pulls the real article body and skips nav, ads, comments, and clutter.
+-  **Model picker** — choose between Gemini Flash (fast & free-tier friendly) and Pro (most capable).
+-  **Private by design** — your API key stays in your browser; page content goes only to Google's Gemini API. No tracking, no servers.
 
 ---
 
-## 📸 Screenshots
+##  Screenshots
 
 
 | Popup | Floating panel |
@@ -36,7 +36,7 @@ A Chrome extension that summarizes any web page or news article and lets you **a
 
 ---
 
-## 🚀 Installation (unpacked)
+##  Installation (unpacked)
 
 The extension isn't on the Chrome Web Store yet — load it manually in a minute:
 
@@ -49,9 +49,9 @@ The extension isn't on the Chrome Web Store yet — load it manually in a minute
 3. Turn on **Developer mode** (top-right toggle).
 4. Click **Load unpacked** and select the project folder.
 5. Pin the extension, then click its icon → ⚙ **Settings**.
-6. Paste your **Gemini API key** (see below), pick a model, click **Test connection**, then **Save**. ✅
+6. Paste your **Gemini API key** (see below), pick a model, click **Test connection**, then **Save**. 
 
-### 🔑 Get a free Gemini API key
+###  Get a free Gemini API key
 
 1. Go to **[Google AI Studio → API Keys](https://aistudio.google.com/app/apikey)**.
 2. Click **Create API key** and copy it.
@@ -59,7 +59,7 @@ The extension isn't on the Chrome Web Store yet — load it manually in a minute
 
 ---
 
-## 📖 Usage
+##  Usage
 
 | How | What |
 |-----|------|
@@ -67,11 +67,11 @@ The extension isn't on the Chrome Web Store yet — load it manually in a minute
 | **Floating panel** | Popup → **Open floating panel ↗**, or right-click the page → **Summarize this page**. Drag by the header; **–** minimizes, **✕** closes. |
 | **Selection** | Highlight text → right-click → **Summarize selection** (summarizes just that text). |
 
-> 💡 The toolbar **popup** always closes when you click the page — that's how Chrome popups work. Use the **floating panel** when you want it to stay open while you read.
+>  The toolbar **popup** always closes when you click the page — that's how Chrome popups work. Use the **floating panel** when you want it to stay open while you read.
 
 ---
 
-## 🏗️ How it works
+##  How it works
 
 ```
 ┌─────────────┐     extract      ┌──────────────┐
@@ -92,7 +92,7 @@ The extension isn't on the Chrome Web Store yet — load it manually in a minute
 
 ---
 
-## 📂 Project structure
+##  Project structure
 
 | File | Role |
 |------|------|
@@ -107,7 +107,7 @@ The extension isn't on the Chrome Web Store yet — load it manually in a minute
 
 ---
 
-## 🛠️ Tech stack
+##  Tech stack
 
 - **Chrome Extensions Manifest V3** (service worker, `chrome.scripting`, `chrome.contextMenus`, `chrome.storage`)
 - **Vanilla JavaScript** (ES modules) — no frameworks, no build step
@@ -115,7 +115,7 @@ The extension isn't on the Chrome Web Store yet — load it manually in a minute
 
 ---
 
-## 🔐 Privacy
+##  Privacy
 
 - Your API key is stored only in your browser via `chrome.storage.sync` (synced to your Google account, never sent to any third party).
 - Page content is sent **only** to Google's Gemini API to generate summaries and answers.
@@ -124,7 +124,7 @@ The extension isn't on the Chrome Web Store yet — load it manually in a minute
 ---
 
 
-## 📄 License
+##  License
 
 [MIT](LICENSE) — free to use, modify, and share.
 
