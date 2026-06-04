@@ -144,7 +144,11 @@ async function doSummarize() {
   showStatus("Reading and summarizing the page…");
   els.summarySection.classList.add("hidden");
 
-  const resp = await send({ type: "SUMMARIZE", page: state.page });
+  // Always re-extract the LIVE page now, instead of reusing the snapshot taken
+  // when the popup opened. The page may have changed since (e.g. opening a
+  // different email in Gmail, or any single-page-app view switch), and reusing
+  // the stale snapshot would summarize the wrong content.
+  const resp = await send({ type: "SUMMARIZE" });
   setBusy(false);
 
   if (!resp.ok) {
@@ -158,7 +162,18 @@ async function doSummarize() {
   }
 
   hideStatus();
-  state.page = resp.page || state.page;
+  // Replace the cached page with the freshly-extracted one and reset chat,
+  // since any prior Q&A history was about the previous content.
+  if (resp.page) {
+    state.page = resp.page;
+    els.pageTitle.textContent = resp.page.title;
+    els.pageMeta.textContent = `${resp.page.siteName} · ${resp.page.wordCount} words`;
+    els.pageInfo.classList.remove("hidden");
+  }
+  state.history = [];
+  els.chatLog.innerHTML = "";
+  els.suggestions.classList.remove("hidden");
+
   state.rawSummary = resp.summary;
   els.summaryContent.innerHTML = renderMarkdown(resp.summary);
   els.summarySection.classList.remove("hidden");

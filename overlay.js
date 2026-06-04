@@ -163,19 +163,24 @@
   }
 
   // Build a "page" object from the selection, or extract via background.
-  async function ensurePage() {
-    if (state.page) return state.page;
+  // Pass forceFresh=true to re-read live page content instead of reusing the
+  // cached snapshot (the page may have changed — e.g. a new email / SPA view).
+  async function ensurePage(forceFresh = false) {
+    // Selection mode is fixed text — never changes, safe to cache.
     if (state.selectionText) {
-      state.page = {
-        title: document.title || "Selected text",
-        url: location.href,
-        siteName: location.hostname,
-        description: "",
-        text: state.selectionText,
-        wordCount: state.selectionText.split(/\s+/).filter(Boolean).length,
-      };
+      if (!state.page) {
+        state.page = {
+          title: document.title || "Selected text",
+          url: location.href,
+          siteName: location.hostname,
+          description: "",
+          text: state.selectionText,
+          wordCount: state.selectionText.split(/\s+/).filter(Boolean).length,
+        };
+      }
       return state.page;
     }
+    if (state.page && !forceFresh) return state.page;
     const ext = await send({ type: "EXTRACT" });
     if (!ext.ok) throw new Error(ext.error);
     state.page = ext.page;
@@ -189,12 +194,17 @@
     showStatus("Reading and summarizing…");
     ui.summaryWrap.classList.add("gem-hidden");
     try {
-      const page = await ensurePage();
+      // Re-read the live page so a changed view (new email, SPA navigation)
+      // gets summarized, not the snapshot from when the panel opened.
+      const page = await ensurePage(true);
       ui.pageinfo.textContent = `${page.siteName} · ${page.wordCount} words`;
       const resp = await send({ type: "SUMMARIZE", page });
       if (!resp.ok) throw new Error(resp.error);
       hideStatus();
       state.page = resp.page || page;
+      // Reset any prior Q&A — it was about the previous content.
+      state.history = [];
+      ui.chatlog.innerHTML = "";
       state.rawSummary = resp.summary;
       ui.summary.innerHTML = renderMarkdown(resp.summary);
       ui.summaryWrap.classList.remove("gem-hidden");
