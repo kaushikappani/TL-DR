@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="popup.css" />
+    <title>TL;DR</title>
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand">
+        <span class="logo">✦</span>
+        <span class="brand-name">TL;DR</span>
+      </div>
+      <button id="settingsBtn" class="icon-btn" title="Settings" aria-label="Settings">⚙</button>
+    </header>
+
+    <!-- Setup banner shown when no API key is configured -->
+    <section id="setupBanner" class="banner hidden">
+      <p>Add your Gemini API key to get started.</p>
+      <button id="openOptions" class="btn btn-primary">Open Settings</button>
+    </section>
+
+    <main id="main">
+      <!-- Page info -->
+      <section id="pageInfo" class="page-info hidden">
+        <div class="page-title" id="pageTitle"></div>
+        <div class="page-meta" id="pageMeta"></div>
+      </section>
+
+      <!-- Action bar -->
+      <section class="actions">
+        <button id="summarizeBtn" class="btn btn-primary">Summarize this page</button>
+        <button id="floatBtn" class="btn btn-secondary" title="Open a floating panel on the page">
+          Open floating panel ↗
+        </button>
+      </section>
+
+      <!-- Status / errors -->
+      <div id="status" class="status hidden"></div>
+
+      <!-- Summary output -->
+      <section id="summarySection" class="summary hidden">
+        <div class="section-label">
+          <span>Summary</span>
+          <button id="copySummary" class="link-btn" title="Copy">Copy</button>
+        </div>
+        <div id="summaryContent" class="summary-content"></div>
+      </section>
+
+      <!-- Chat / Q&A -->
+      <section id="chatSection" class="chat hidden">
+        <div class="section-label"><span>Ask about this page</span></div>
+        <div id="chatLog" class="chat-log"></div>
+        <form id="chatForm" class="chat-form">
+          <input
+            id="chatInput"
+            type="text"
+            placeholder="Ask a question…"
+            autocomplete="off"
+          />
+          <button id="chatSend" type="submit" class="btn btn-send" aria-label="Send">➤</button>
+        </form>
+        <div class="suggestions" id="suggestions">
+          <button class="chip" data-q="What are the main takeaways?">Main takeaways</button>
+          <button class="chip" data-q="Explain this in simple terms.">Explain simply</button>
+          <button class="chip" data-q="What is the key conclusion?">Key conclusion</button>
+        </div>
+      </section>
+    </main>
+
+    <footer class="app-footer">
+      <span id="modelTag" class="model-tag"></span>
+      <span class="footer-hint">
+        Built by
+        <a href="https://kaushikappani.github.io/portfolio/" target="_blank" rel="noopener">
+          Kaushik Appani</a>
+      </span>
+    </footer>
+
+    <script src="popup.js" type="module"></script>
+  </body>
+</html>

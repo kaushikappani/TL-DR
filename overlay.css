@@ -1,0 +1,137 @@
+/* overlay.css — injected floating panel. All rules scoped under #__gem_summarizer_panel__. */
+
+#__gem_summarizer_panel__ {
+  position: fixed !important;
+  top: 16px !important;
+  right: 16px !important;
+  width: 380px !important;
+  max-height: 80vh !important;
+  z-index: 2147483647 !important;
+  background: #0f1117 !important;
+  color: #e6e8ee !important;
+  border: 1px solid #2c3140 !important;
+  border-radius: 12px !important;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5) !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  font-size: 14px !important;
+  line-height: 1.5 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+
+#__gem_summarizer_panel__ * { box-sizing: border-box !important; }
+
+#__gem_summarizer_panel__ .gem-header {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: 10px 12px !important;
+  background: #1a1d27 !important;
+  border-bottom: 1px solid #2c3140 !important;
+  cursor: grab !important;
+  user-select: none !important;
+}
+#__gem_summarizer_panel__ .gem-header:active { cursor: grabbing !important; }
+#__gem_summarizer_panel__ .gem-title { font-weight: 600 !important; display: flex !important; align-items: center !important; gap: 6px !important; }
+#__gem_summarizer_panel__ .gem-logo { color: #7c6cff !important; }
+#__gem_summarizer_panel__ .gem-header-actions { display: flex !important; gap: 4px !important; }
+#__gem_summarizer_panel__ .gem-icon {
+  background: transparent !important;
+  border: none !important;
+  color: #9aa0ad !important;
+  font-size: 16px !important;
+  width: 26px !important; height: 26px !important;
+  cursor: pointer !important;
+  border-radius: 6px !important;
+  line-height: 1 !important;
+  padding: 0 !important;
+}
+#__gem_summarizer_panel__ .gem-icon:hover { background: #232733 !important; color: #fff !important; }
+
+#__gem_summarizer_panel__ .gem-body {
+  padding: 12px !important;
+  overflow-y: auto !important;
+  flex: 1 !important;
+}
+#__gem_summarizer_panel__.gem-minimized .gem-body { display: none !important; }
+
+#__gem_summarizer_panel__ .gem-pageinfo { color: #9aa0ad !important; font-size: 11px !important; margin-bottom: 10px !important; }
+
+#__gem_summarizer_panel__ .gem-btn {
+  font-family: inherit !important;
+  font-size: 14px !important;
+  border: none !important;
+  border-radius: 8px !important;
+  padding: 10px 14px !important;
+  cursor: pointer !important;
+  font-weight: 500 !important;
+}
+#__gem_summarizer_panel__ .gem-primary { background: #7c6cff !important; color: #fff !important; width: 100% !important; }
+#__gem_summarizer_panel__ .gem-primary:hover { background: #8f80ff !important; }
+#__gem_summarizer_panel__ .gem-primary:disabled { opacity: 0.55 !important; cursor: not-allowed !important; }
+
+#__gem_summarizer_panel__ .gem-status { padding: 9px 11px !important; border-radius: 8px !important; margin-top: 10px !important; font-size: 13px !important; }
+#__gem_summarizer_panel__ .gem-loading { background: #232733 !important; color: #9aa0ad !important; }
+#__gem_summarizer_panel__ .gem-error { background: rgba(255,107,107,0.12) !important; color: #ff6b6b !important; }
+#__gem_summarizer_panel__ .gem-spin {
+  display: inline-block !important; width: 12px !important; height: 12px !important;
+  border: 2px solid #9aa0ad !important; border-top-color: transparent !important;
+  border-radius: 50% !important; margin-right: 8px !important; vertical-align: -1px !important;
+  animation: gem-spin 0.7s linear infinite !important;
+}
+@keyframes gem-spin { to { transform: rotate(360deg); } }
+
+#__gem_summarizer_panel__ .gem-label {
+  display: flex !important; justify-content: space-between !important; align-items: center !important;
+  font-size: 11px !important; text-transform: uppercase !important; letter-spacing: 0.6px !important;
+  color: #9aa0ad !important; margin: 14px 0 8px !important;
+}
+#__gem_summarizer_panel__ .gem-link { background: none !important; border: none !important; color: #7c6cff !important; cursor: pointer !important; font-size: 11px !important; padding: 0 !important; }
+#__gem_summarizer_panel__ .gem-link:hover { text-decoration: underline !important; }
+
+#__gem_summarizer_panel__ .gem-summary-content {
+  background: #1a1d27 !important; border: 1px solid #2c3140 !important; border-radius: 10px !important;
+  padding: 12px 14px !important; font-size: 13.5px !important;
+}
+#__gem_summarizer_panel__ .gem-summary-content p { margin: 0 0 8px !important; }
+#__gem_summarizer_panel__ .gem-summary-content ul { margin: 4px 0 8px !important; padding-left: 18px !important; }
+#__gem_summarizer_panel__ .gem-summary-content li { margin-bottom: 4px !important; }
+#__gem_summarizer_panel__ .gem-summary-content strong { color: #fff !important; }
+
+#__gem_summarizer_panel__ .gem-chatlog { display: flex !important; flex-direction: column !important; gap: 8px !important; margin-bottom: 10px !important; }
+#__gem_summarizer_panel__ .gem-msg { padding: 8px 11px !important; border-radius: 10px !important; font-size: 13px !important; max-width: 90% !important; word-wrap: break-word !important; }
+#__gem_summarizer_panel__ .gem-user { background: #7c6cff !important; color: #fff !important; align-self: flex-end !important; border-bottom-right-radius: 3px !important; }
+#__gem_summarizer_panel__ .gem-model { background: #232733 !important; align-self: flex-start !important; border-bottom-left-radius: 3px !important; }
+#__gem_summarizer_panel__ .gem-model p { margin: 0 0 6px !important; }
+#__gem_summarizer_panel__ .gem-model ul { margin: 4px 0 !important; padding-left: 16px !important; }
+#__gem_summarizer_panel__ .gem-thinking { color: #9aa0ad !important; font-style: italic !important; }
+
+#__gem_summarizer_panel__ .gem-chatform { display: flex !important; gap: 6px !important; }
+#__gem_summarizer_panel__ .gem-chatform input {
+  flex: 1 !important; background: #1a1d27 !important; border: 1px solid #2c3140 !important;
+  border-radius: 8px !important; color: #e6e8ee !important; padding: 9px 11px !important;
+  font-size: 13px !important; font-family: inherit !important; outline: none !important;
+}
+#__gem_summarizer_panel__ .gem-chatform input:focus { border-color: #7c6cff !important; }
+#__gem_summarizer_panel__ .gem-send { background: #7c6cff !important; color: #fff !important; width: 42px !important; padding: 0 !important; font-size: 14px !important; border: none !important; border-radius: 8px !important; cursor: pointer !important; }
+#__gem_summarizer_panel__ .gem-send:hover { background: #8f80ff !important; }
+#__gem_summarizer_panel__ .gem-send:disabled { opacity: 0.5 !important; cursor: not-allowed !important; }
+
+#__gem_summarizer_panel__ .gem-footer {
+  padding: 8px 12px !important;
+  border-top: 1px solid #2c3140 !important;
+  background: #1a1d27 !important;
+  font-size: 11px !important;
+  color: #9aa0ad !important;
+  text-align: center !important;
+}
+#__gem_summarizer_panel__.gem-minimized .gem-footer { display: none !important; }
+#__gem_summarizer_panel__ .gem-footer a {
+  color: #7c6cff !important;
+  text-decoration: none !important;
+}
+#__gem_summarizer_panel__ .gem-footer a:hover { text-decoration: underline !important; }
+
+#__gem_summarizer_panel__ .gem-hidden { display: none !important; }

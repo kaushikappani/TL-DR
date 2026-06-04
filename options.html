@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TL;DR — Settings</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <div class="card">
+      <h1><span class="logo">✦</span> TL;DR Settings</h1>
+
+      <label class="field-label" for="apiKey">Gemini API Key</label>
+      <div class="key-row">
+        <input id="apiKey" type="password" placeholder="AIza…" autocomplete="off" />
+        <button id="toggleKey" class="ghost-btn" type="button" title="Show / hide">👁</button>
+      </div>
+      <p class="hint">
+        Get a free key from
+        <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">
+          Google AI Studio</a>. It's stored only in your browser's sync storage.
+      </p>
+
+      <label class="field-label" for="model">Model</label>
+      <select id="model">
+        <option value="gemini-2.0-flash">gemini-2.0-flash (fast, recommended)</option>
+        <option value="gemini-2.0-flash-lite">gemini-2.0-flash-lite (fastest, cheapest)</option>
+        <option value="gemini-2.5-flash">gemini-2.5-flash (smarter)</option>
+        <option value="gemini-2.5-pro">gemini-2.5-pro (most capable)</option>
+        <option value="gemini-1.5-flash">gemini-1.5-flash (legacy)</option>
+      </select>
+      <p class="hint">Flash models are fast and free-tier friendly. Pro is more thorough but slower.</p>
+
+      <div class="row">
+        <button id="testBtn" class="ghost-btn">Test connection</button>
+        <button id="saveBtn" class="primary-btn">Save</button>
+      </div>
+
+      <div id="status" class="status hidden"></div>
+    </div>
+
+    <script src="options.js" type="module"></script>
+  </body>
+</html>
