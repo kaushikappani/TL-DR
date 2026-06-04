@@ -140,21 +140,31 @@ async function getActiveTab() {
   return tab;
 }
 
-// Cache the most recently extracted page per tab+url. Lets the popup/overlay
-// run summarize then Q&A without re-downloading a PDF or shipping its bytes
-// back and forth through messaging. Invalidated when the tab's URL changes.
-const pageCache = new Map(); // tabId -> { url, page }
+// Cache the most recently extracted page per tab+url so summarize → Q&A can
+// reuse it (especially the large PDF bytes) without re-extracting or shipping
+// bytes through messaging.
+//
+// IMPORTANT: this MUST survive service-worker restarts. MV3 kills the worker
+// after ~30s idle, so an in-memory Map would be empty by the time the user
+// types a question — which silently drops the page context. chrome.storage.
+// session persists across restarts (and is cleared when the browser closes).
+const cacheKey = (tabId) => `page_${tabId}`;
 
-function cacheGet(tabId, url) {
-  const entry = pageCache.get(tabId);
+async function cacheGet(tabId, url) {
+  const key = cacheKey(tabId);
+  const obj = await chrome.storage.session.get(key);
+  const entry = obj[key];
   return entry && entry.url === url ? entry.page : null;
 }
-function cacheSet(tabId, url, page) {
-  pageCache.set(tabId, { url, page });
+async function cacheSet(tabId, url, page) {
+  await chrome.storage.session.set({ [cacheKey(tabId)]: { url, page } });
 }
-chrome.tabs.onRemoved.addListener((tabId) => pageCache.delete(tabId));
+async function cacheDelete(tabId) {
+  await chrome.storage.session.remove(cacheKey(tabId));
+}
+chrome.tabs.onRemoved.addListener((tabId) => cacheDelete(tabId));
 chrome.tabs.onUpdated.addListener((tabId, info) => {
-  if (info.url) pageCache.delete(tabId); // navigation — drop stale cache
+  if (info.url) cacheDelete(tabId); // navigation — drop stale cache
 });
 
 // Remove heavy PDF bytes before sending a page across messaging to the UI.
@@ -265,31 +275,33 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         case "EXTRACT": {
           const tab = await getActiveTab();
           const page = await extractTab(tab.id, tab.url, tab);
-          cacheSet(tab.id, tab.url, page);
+          await cacheSet(tab.id, tab.url, page);
           // For PDFs, don't ship the (large) bytes back to the popup; return a
-          // lightweight descriptor. The bytes stay cached in the worker.
+          // lightweight descriptor. The bytes stay cached in session storage.
           sendResponse({ ok: true, page: stripHeavy(page) });
           break;
         }
         case "SUMMARIZE": {
           const tab = await getActiveTab();
-          // Always re-read the live page (handles SPA/email/PDF view changes),
-          // but reuse a cached PDF for the same URL to avoid re-downloading.
-          let page = msg.usePage && cacheGet(tab.id, tab.url);
-          if (!page) {
-            page = await extractTab(tab.id, tab.url, tab);
-            cacheSet(tab.id, tab.url, page);
-          }
+          // Honor an explicitly-passed page (e.g. "Summarize selection", where
+          // the caller supplies the selected text). Otherwise re-read the live
+          // page (handles SPA/email/PDF view changes). Either way, cache it so
+          // the follow-up Q&A uses the exact same content.
+          const page = msg.page || (await extractTab(tab.id, tab.url, tab));
+          await cacheSet(tab.id, tab.url, page);
           const summary = await summarizePage(page);
           sendResponse({ ok: true, summary, page: stripHeavy(page) });
           break;
         }
         case "ASK": {
           const tab = await getActiveTab();
-          // Prefer the cached full page (with PDF bytes); fall back to whatever
-          // the caller passed.
-          const page = cacheGet(tab.id, tab.url) || msg.page;
-          if (!page) throw new Error("Nothing to ask about yet — summarize first.");
+          // Use the page cached at summarize time. If the worker restarted and
+          // the cache is gone, re-extract live so we never answer blind.
+          let page = await cacheGet(tab.id, tab.url);
+          if (!page) {
+            page = await extractTab(tab.id, tab.url, tab);
+            await cacheSet(tab.id, tab.url, page);
+          }
           const answer = await answerQuestion(page, msg.history);
           sendResponse({ ok: true, answer });
           break;

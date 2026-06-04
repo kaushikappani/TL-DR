@@ -60,13 +60,21 @@
 #__gem_summarizer_panel__ .gem-pageinfo { color: #9aa0ad !important; font-size: 11px !important; margin-bottom: 10px !important; }
 
 #__gem_summarizer_panel__ .gem-btn {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
   font-family: inherit !important;
   font-size: 14px !important;
+  line-height: 1.2 !important;
   border: none !important;
   border-radius: 8px !important;
   padding: 10px 14px !important;
+  margin: 0 !important;
   cursor: pointer !important;
   font-weight: 500 !important;
+  text-align: center !important;
+  white-space: nowrap !important;
+  box-sizing: border-box !important;
 }
 #__gem_summarizer_panel__ .gem-primary { background: #7c6cff !important; color: #fff !important; width: 100% !important; }
 #__gem_summarizer_panel__ .gem-primary:hover { background: #8f80ff !important; }

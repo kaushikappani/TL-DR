@@ -42,9 +42,7 @@
     </div>
     <div class="gem-body" id="gem-body">
       <div class="gem-pageinfo" id="gem-pageinfo"></div>
-      <button type="button" class="gem-btn gem-primary" id="gem-summarize">
-        ${state.selectionText ? "Summarize selection" : "Summarize this page"}
-      </button>
+      <button type="button" class="gem-btn gem-primary" id="gem-summarize">${state.selectionText ? "Summarize selection" : "Summarize this page"}</button>
       <div class="gem-status gem-hidden" id="gem-status"></div>
 
       <div class="gem-summary gem-hidden" id="gem-summary-wrap">
@@ -257,16 +255,29 @@
     catch (_) { ui.copy.textContent = "Failed"; }
     setTimeout(() => (ui.copy.textContent = "Copy"), 1500);
   });
-  $("gem-close").addEventListener("click", () => { panel.remove(); link.remove(); });
-  $("gem-min").addEventListener("click", () => panel.classList.toggle("gem-minimized"));
+  function toggleMinimize() { panel.classList.toggle("gem-minimized"); }
 
-  // Dragging by the header.
+  $("gem-close").addEventListener("click", (e) => {
+    e.stopPropagation();
+    panel.remove();
+    link.remove();
+  });
+  $("gem-min").addEventListener("click", (e) => {
+    e.stopPropagation(); // don't also trigger the header-click toggle
+    toggleMinimize();
+  });
+
+  // Dragging by the header — and a plain click on the header (that wasn't a
+  // drag and wasn't on a button) expands/collapses the panel.
   (function makeDraggable() {
     const handle = $("gem-drag");
-    let sx, sy, ox, oy, dragging = false;
+    let sx, sy, ox, oy, dragging = false, moved = false;
+    const DRAG_THRESHOLD = 4; // px before a press counts as a drag, not a click
+
     handle.addEventListener("mousedown", (e) => {
-      if (e.target.closest(".gem-icon")) return;
+      if (e.target.closest(".gem-icon")) return; // let buttons handle themselves
       dragging = true;
+      moved = false;
       const r = panel.getBoundingClientRect();
       sx = e.clientX; sy = e.clientY; ox = r.left; oy = r.top;
       panel.style.right = "auto";
@@ -275,19 +286,27 @@
       window.addEventListener("mouseup", up, true);
       e.preventDefault();
     });
+
     function move(e) {
       if (!dragging) return;
-      let nx = ox + (e.clientX - sx);
-      let ny = oy + (e.clientY - sy);
-      nx = Math.max(0, Math.min(nx, window.innerWidth - 60));
-      ny = Math.max(0, Math.min(ny, window.innerHeight - 40));
+      const dx = e.clientX - sx;
+      const dy = e.clientY - sy;
+      if (!moved && Math.abs(dx) + Math.abs(dy) > DRAG_THRESHOLD) moved = true;
+      if (!moved) return;
+      let nx = Math.max(0, Math.min(ox + dx, window.innerWidth - 60));
+      let ny = Math.max(0, Math.min(oy + dy, window.innerHeight - 40));
       panel.style.left = nx + "px";
       panel.style.top = ny + "px";
     }
+
     function up() {
-      dragging = false;
       window.removeEventListener("mousemove", move, true);
       window.removeEventListener("mouseup", up, true);
+      const wasDrag = moved;
+      dragging = false;
+      moved = false;
+      // A press that didn't move = a click on the header → toggle collapse.
+      if (!wasDrag) toggleMinimize();
     }
   })();
 
