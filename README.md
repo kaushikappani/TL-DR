@@ -17,14 +17,15 @@ A Chrome extension that summarizes any web page or news article and lets you **a
 
 ##  Features
 
+-  **Two AI providers** — use **Google Gemini** or **Groq** (Llama 3.3, GPT-OSS). Pick one in Settings; switch anytime.
 -  **One-click summary** — instant TL;DR + key takeaways for any page.
--  **Works on PDFs too** — summarize and question online *or* local PDFs (including scanned ones — Gemini reads the file directly).
+-  **Works on PDFs too** — summarize and question online *or* local PDFs. Text is extracted locally with pdf.js, so it works with either provider (scanned/image-only PDFs aren't supported).
 -  **Ask questions** — chat with the page; answers are grounded in its actual content, with conversation history.
 -  **Right-click menu** — *"Summarize this page"* anywhere, or *"Summarize selection"* on highlighted text.
 -  **Floating panel** — a draggable, minimizable panel that lives on the page, so you never lose your place when you click away.
 -  **Smart extraction** — pulls the real article body and skips nav, ads, comments, and clutter.
--  **Model picker** — choose between Gemini Flash (fast & free-tier friendly) and Pro (most capable).
--  **Private by design** — your API key stays in your browser; page content goes only to Google's Gemini API. No tracking, no servers.
+-  **Model picker** — choose the model per provider (Gemini Flash/Pro, or Groq Llama/GPT-OSS).
+-  **Private by design** — your API key stays in your browser; page content goes only to your chosen AI provider. No tracking, no servers.
 
 ---
 

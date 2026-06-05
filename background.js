@@ -1,13 +1,14 @@
 // background.js
-// Service worker: orchestrates page extraction, Gemini calls, context menus,
-// and injection of the floating overlay panel.
+// Service worker: orchestrates page extraction, AI provider calls, context
+// menus, and injection of the floating overlay panel.
 
-import { summarizePage, answerQuestion, getSettings } from "./gemini.js";
+import { summarizePage, answerQuestion, getActive } from "./ai.js";
+import { extractPdfText } from "./pdftext.js";
 
 const RESTRICTED = /^(chrome|edge|about|chrome-extension|devtools|view-source|moz-extension):/i;
 
-// Gemini's inline-data limit is ~20 MB total request; keep PDFs well under it.
-const MAX_PDF_BYTES = 18 * 1024 * 1024;
+// Keep PDF downloads reasonable (we extract text locally, then send text only).
+const MAX_PDF_BYTES = 30 * 1024 * 1024;
 
 function isRestricted(url) {
   return !url || RESTRICTED.test(url);
@@ -29,16 +30,6 @@ function looksLikePdf(url) {
   return false;
 }
 
-/** Convert an ArrayBuffer to base64 (chunked to avoid call-stack limits). */
-function bufferToBase64(buffer) {
-  const bytes = new Uint8Array(buffer);
-  let binary = "";
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
-  }
-  return btoa(binary);
-}
 
 /** Fetch a PDF (web or file://) and return a page object carrying its bytes. */
 async function extractPdf(url, tab) {
@@ -76,6 +67,21 @@ async function extractPdf(url, tab) {
     name = decodeURIComponent(u.pathname.split("/").pop() || "PDF") || "PDF";
   } catch (_) {}
 
+  // Extract text locally with pdf.js so it works with ANY provider (Groq/Gemini
+  // both take text). Scanned/image-only PDFs yield little/no text.
+  let extracted;
+  try {
+    extracted = await extractPdfText(buffer);
+  } catch (e) {
+    console.warn("[TL;DR] PDF parse failed:", e);
+    throw new Error("Couldn't read this PDF's text (it may be encrypted or corrupted).");
+  }
+  if (!extracted.text || extracted.text.trim().length < 30) {
+    throw new Error(
+      "No selectable text found in this PDF — it's likely a scanned/image-only document, which this extension can't read."
+    );
+  }
+
   return {
     title: (tab && tab.title) || name,
     url,
@@ -83,7 +89,8 @@ async function extractPdf(url, tab) {
     description: "",
     isPdf: true,
     sizeKB: Math.round(buffer.byteLength / 1024),
-    pdf: { mimeType: "application/pdf", data: bufferToBase64(buffer) },
+    pageCount: extracted.pageCount,
+    text: extracted.text,
   };
 }
 
@@ -141,8 +148,8 @@ async function getActiveTab() {
 }
 
 // Cache the most recently extracted page per tab+url so summarize → Q&A can
-// reuse it (especially the large PDF bytes) without re-extracting or shipping
-// bytes through messaging.
+// reuse it (especially large PDF text) without re-extracting or shipping the
+// full text through messaging.
 //
 // IMPORTANT: this MUST survive service-worker restarts. MV3 kills the worker
 // after ~30s idle, so an in-memory Map would be empty by the time the user
@@ -167,11 +174,12 @@ chrome.tabs.onUpdated.addListener((tabId, info) => {
   if (info.url) cacheDelete(tabId); // navigation — drop stale cache
 });
 
-// Remove heavy PDF bytes before sending a page across messaging to the UI.
+// Strip the large extracted text before sending a page descriptor to the UI —
+// the popup/overlay only needs title/meta; the full text stays in the cache.
 function stripHeavy(page) {
-  if (!page || !page.pdf) return page;
-  const { pdf, ...rest } = page;
-  return { ...rest, isPdf: true };
+  if (!page) return page;
+  const { text, pdf, ...rest } = page;
+  return rest;
 }
 
 // Lightweight page descriptor for display (no PDF download).
@@ -259,12 +267,15 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
 // ---- message router (used by both popup and overlay) ----
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  // Messages aimed at the offscreen document are handled there, not here.
+  if (msg && msg.type === "OFFSCREEN_EXTRACT_PDF") return false;
+
   (async () => {
     try {
       switch (msg.type) {
         case "PING_SETTINGS": {
-          const { apiKey, model } = await getSettings();
-          sendResponse({ ok: true, hasKey: !!apiKey, model });
+          const { provider, apiKey, model } = await getActive();
+          sendResponse({ ok: true, hasKey: !!apiKey, provider, model });
           break;
         }
         case "PAGE_INFO": {

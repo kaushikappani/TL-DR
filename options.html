@@ -10,27 +10,56 @@
     <div class="card">
       <h1><span class="logo">✦</span> TL;DR Settings</h1>
 
-      <label class="field-label" for="apiKey">Gemini API Key</label>
-      <div class="key-row">
-        <input id="apiKey" type="password" placeholder="AIza…" autocomplete="off" />
-        <button id="toggleKey" class="ghost-btn" type="button" title="Show / hide">👁</button>
+      <label class="field-label">AI Provider</label>
+      <div class="toggle-group" id="provider" role="tablist">
+        <button type="button" class="toggle-btn" data-provider="gemini" role="tab">Google Gemini</button>
+        <button type="button" class="toggle-btn" data-provider="groq" role="tab">Groq</button>
       </div>
-      <p class="hint">
-        Get a free key from
-        <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">
-          Google AI Studio</a>. It's stored only in your browser's sync storage.
-      </p>
+      <p class="hint">Pick which AI service to use. Each has its own key and models.</p>
 
-      <label class="field-label" for="model">Model</label>
-      <select id="model">
-        <option value="gemini-flash-latest">gemini-flash-latest (always newest Flash, recommended)</option>
-        <option value="gemini-2.0-flash">gemini-2.0-flash (fast)</option>
-        <option value="gemini-2.0-flash-lite">gemini-2.0-flash-lite (fastest, cheapest)</option>
-        <option value="gemini-2.5-flash">gemini-2.5-flash (smarter)</option>
-        <option value="gemini-2.5-pro">gemini-2.5-pro (most capable)</option>
-        <option value="gemini-1.5-flash">gemini-1.5-flash (legacy)</option>
-      </select>
-      <p class="hint">Flash models are fast and free-tier friendly. Pro is more thorough but slower.</p>
+      <!-- Gemini settings -->
+      <section id="geminiPanel" class="provider-panel">
+        <label class="field-label" for="geminiKey">Gemini API Key</label>
+        <div class="key-row">
+          <input id="geminiKey" type="password" placeholder="AIza…" autocomplete="off" />
+          <button class="ghost-btn toggle-key" data-target="geminiKey" type="button" title="Show / hide">👁</button>
+        </div>
+        <p class="hint">
+          Get a free key from
+          <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Google AI Studio</a>.
+        </p>
+
+        <label class="field-label" for="geminiModel">Gemini Model</label>
+        <select id="geminiModel">
+          <option value="gemini-flash-latest">gemini-flash-latest (always newest Flash, recommended)</option>
+          <option value="gemini-2.0-flash">gemini-2.0-flash (fast)</option>
+          <option value="gemini-2.0-flash-lite">gemini-2.0-flash-lite (fastest, cheapest)</option>
+          <option value="gemini-2.5-flash">gemini-2.5-flash (smarter)</option>
+          <option value="gemini-2.5-pro">gemini-2.5-pro (most capable)</option>
+          <option value="gemini-1.5-flash">gemini-1.5-flash (legacy)</option>
+        </select>
+      </section>
+
+      <!-- Groq settings -->
+      <section id="groqPanel" class="provider-panel">
+        <label class="field-label" for="groqKey">Groq API Key</label>
+        <div class="key-row">
+          <input id="groqKey" type="password" placeholder="gsk_…" autocomplete="off" />
+          <button class="ghost-btn toggle-key" data-target="groqKey" type="button" title="Show / hide">👁</button>
+        </div>
+        <p class="hint">
+          Get a free key from
+          <a href="https://console.groq.com/keys" target="_blank" rel="noopener">Groq Console</a>.
+        </p>
+
+        <label class="field-label" for="groqModel">Groq Model</label>
+        <select id="groqModel">
+          <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile (recommended)</option>
+          <option value="llama-3.1-8b-instant">llama-3.1-8b-instant (fastest)</option>
+          <option value="openai/gpt-oss-20b">openai/gpt-oss-20b</option>
+          <option value="openai/gpt-oss-120b">openai/gpt-oss-120b (most capable)</option>
+        </select>
+      </section>
 
       <div class="row">
         <button id="testBtn" class="ghost-btn">Test connection</button>

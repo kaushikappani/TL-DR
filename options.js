@@ -1,73 +1,128 @@
 // options.js
-import { DEFAULT_MODEL } from "./gemini.js";
+import { PROVIDERS, getSettings } from "./ai.js";
 
-const apiKeyEl = document.getElementById("apiKey");
-const modelEl = document.getElementById("model");
-const toggleKey = document.getElementById("toggleKey");
-const saveBtn = document.getElementById("saveBtn");
-const testBtn = document.getElementById("testBtn");
-const statusEl = document.getElementById("status");
+const els = {
+  providerGroup: document.getElementById("provider"),
+  toggleBtns: document.querySelectorAll(".toggle-btn"),
+  geminiPanel: document.getElementById("geminiPanel"),
+  groqPanel: document.getElementById("groqPanel"),
+  geminiKey: document.getElementById("geminiKey"),
+  geminiModel: document.getElementById("geminiModel"),
+  groqKey: document.getElementById("groqKey"),
+  groqModel: document.getElementById("groqModel"),
+  saveBtn: document.getElementById("saveBtn"),
+  testBtn: document.getElementById("testBtn"),
+  status: document.getElementById("status"),
+};
+
+let currentProvider = "gemini";
 
 function status(text, kind) {
-  statusEl.className = `status ${kind}`;
-  statusEl.textContent = text;
-  statusEl.classList.remove("hidden");
+  els.status.className = `status ${kind}`;
+  els.status.textContent = text;
+  els.status.classList.remove("hidden");
+}
+
+function setProvider(provider) {
+  currentProvider = provider === "groq" ? "groq" : "gemini";
+  const isGroq = currentProvider === "groq";
+  els.toggleBtns.forEach((b) => {
+    const active = b.dataset.provider === currentProvider;
+    b.classList.toggle("active", active);
+    b.setAttribute("aria-selected", active ? "true" : "false");
+  });
+  els.groqPanel.classList.toggle("active", isGroq);
+  els.geminiPanel.classList.toggle("active", !isGroq);
 }
 
 async function load() {
-  const { apiKey, model } = await chrome.storage.sync.get(["apiKey", "model"]);
-  if (apiKey) apiKeyEl.value = apiKey;
-  modelEl.value = model || DEFAULT_MODEL;
+  const s = await getSettings();
+  els.geminiKey.value = s.geminiKey || "";
+  els.geminiModel.value = s.geminiModel;
+  els.groqKey.value = s.groqKey || "";
+  els.groqModel.value = s.groqModel;
+  setProvider(s.provider);
 }
 
-toggleKey.addEventListener("click", () => {
-  apiKeyEl.type = apiKeyEl.type === "password" ? "text" : "password";
+els.toggleBtns.forEach((btn) => {
+  btn.addEventListener("click", () => setProvider(btn.dataset.provider));
 });
 
-saveBtn.addEventListener("click", async () => {
-  const apiKey = apiKeyEl.value.trim();
-  const model = modelEl.value;
-  if (!apiKey) {
-    status("Please enter an API key.", "error");
+// Show/hide key buttons.
+document.querySelectorAll(".toggle-key").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const input = document.getElementById(btn.dataset.target);
+    input.type = input.type === "password" ? "text" : "password";
+  });
+});
+
+els.saveBtn.addEventListener("click", async () => {
+  const provider = currentProvider;
+  const activeKey = provider === "groq" ? els.groqKey.value.trim() : els.geminiKey.value.trim();
+  if (!activeKey) {
+    status(`Please enter your ${PROVIDERS[provider].label} API key.`, "error");
     return;
   }
-  await chrome.storage.sync.set({ apiKey, model });
+  await chrome.storage.sync.set({
+    provider,
+    geminiKey: els.geminiKey.value.trim(),
+    geminiModel: els.geminiModel.value,
+    groqKey: els.groqKey.value.trim(),
+    groqModel: els.groqModel.value,
+  });
   status("Saved! You can close this tab.", "ok");
 });
 
-// Test the key by making a tiny generateContent call directly.
-testBtn.addEventListener("click", async () => {
-  const apiKey = apiKeyEl.value.trim();
-  const model = modelEl.value;
-  if (!apiKey) {
-    status("Enter an API key first.", "error");
-    return;
-  }
+// Test the active provider with a tiny request.
+els.testBtn.addEventListener("click", async () => {
+  const provider = currentProvider;
   status("Testing…", "loading");
+  try {
+    if (provider === "groq") {
+      await testGroq(els.groqKey.value.trim(), els.groqModel.value);
+    } else {
+      await testGemini(els.geminiKey.value.trim(), els.geminiModel.value);
+    }
+    status("✓ Connection works! Don't forget to Save.", "ok");
+  } catch (e) {
+    status(`✗ ${e.message}`, "error");
+  }
+});
 
+async function testGemini(apiKey, model) {
+  if (!apiKey) throw new Error("Enter a Gemini API key first.");
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
     model
   )}:generateContent?key=${encodeURIComponent(apiKey)}`;
-
-  try {
-    const resp = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: "Reply with the single word: OK" }] }],
-        generationConfig: { maxOutputTokens: 5 },
-      }),
-    });
-    if (resp.ok) {
-      status("✓ Connection works! Don't forget to Save.", "ok");
-    } else {
-      const err = await resp.json().catch(() => ({}));
-      const msg = err?.error?.message || resp.statusText;
-      status(`✗ Failed (${resp.status}): ${msg}`, "error");
-    }
-  } catch (e) {
-    status(`✗ Network error: ${e.message}`, "error");
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ role: "user", parts: [{ text: "Reply with: OK" }] }],
+      generationConfig: { maxOutputTokens: 5 },
+    }),
+  });
+  if (!resp.ok) {
+    const msg = (await resp.json().catch(() => ({})))?.error?.message || resp.statusText;
+    throw new Error(`Failed (${resp.status}): ${msg}`);
   }
-});
+}
+
+async function testGroq(apiKey, model) {
+  if (!apiKey) throw new Error("Enter a Groq API key first.");
+  const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: "user", content: "Reply with: OK" }],
+      max_tokens: 5,
+    }),
+  });
+  if (!resp.ok) {
+    const msg = (await resp.json().catch(() => ({})))?.error?.message || resp.statusText;
+    throw new Error(`Failed (${resp.status}): ${msg}`);
+  }
+}
 
 load();

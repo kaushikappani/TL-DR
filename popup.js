@@ -119,7 +119,8 @@ async function init() {
     showStatus(settings.error || "Could not reach extension.", "error");
     return;
   }
-  els.modelTag.textContent = settings.model || "";
+  const providerLabel = settings.provider === "groq" ? "Groq" : "Gemini";
+  els.modelTag.textContent = settings.model ? `${providerLabel} · ${settings.model}` : providerLabel;
   if (!settings.hasKey) {
     els.setupBanner.classList.remove("hidden");
     els.main.classList.add("hidden");

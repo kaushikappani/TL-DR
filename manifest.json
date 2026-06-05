@@ -3,10 +3,10 @@
   "name": "TL;DR",
   "version": "1.0.0",
   "description": "Summarize any web page or article and ask follow-up questions about it, powered by Google Gemini.",
-  "permissions": ["activeTab", "scripting", "storage", "contextMenus"],
+  "permissions": ["activeTab", "scripting", "storage", "contextMenus", "offscreen"],
   "web_accessible_resources": [
     {
-      "resources": ["overlay.css"],
+      "resources": ["overlay.css", "lib/pdf.worker.min.mjs"],
       "matches": ["<all_urls>"]
     }
   ],
