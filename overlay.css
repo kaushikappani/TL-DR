@@ -1,4 +1,6 @@
-/* overlay.css — injected floating panel. All rules scoped under #__gem_summarizer_panel__. */
+/* overlay.css — injected floating panel, iOS 26 "Liquid Glass" (dark).
+   All rules scoped under #__gem_summarizer_panel__ and forced with !important
+   so they survive the host page's styles. backdrop-filter blurs the page behind. */
 
 #__gem_summarizer_panel__ {
   position: fixed !important;
@@ -7,18 +9,24 @@
   width: 380px !important;
   max-height: 80vh !important;
   z-index: 2147483647 !important;
-  background: #0f1117 !important;
-  color: #e6e8ee !important;
-  border: 1px solid #2c3140 !important;
-  border-radius: 12px !important;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5) !important;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  background: #1e293b !important;
+  backdrop-filter: blur(40px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(40px) saturate(180%) !important;
+  color: #f8fafc !important;
+  border: 1px solid rgba(148, 163, 184, 0.22) !important;
+  border-radius: 24px !important;
+  box-shadow:
+    0 1px 1px rgba(255, 255, 255, 0.12) inset,
+    0 -1px 1px rgba(0, 0, 0, 0.2) inset,
+    0 20px 60px rgba(0, 0, 0, 0.6) !important;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif !important;
   font-size: 14px !important;
   line-height: 1.5 !important;
   display: flex !important;
   flex-direction: column !important;
   overflow: hidden !important;
   box-sizing: border-box !important;
+  -webkit-font-smoothing: antialiased !important;
 }
 
 #__gem_summarizer_panel__ * { box-sizing: border-box !important; }
@@ -27,37 +35,42 @@
   display: flex !important;
   align-items: center !important;
   justify-content: space-between !important;
-  padding: 10px 12px !important;
-  background: #1a1d27 !important;
-  border-bottom: 1px solid #2c3140 !important;
+  padding: 12px 14px !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
   cursor: grab !important;
   user-select: none !important;
 }
 #__gem_summarizer_panel__ .gem-header:active { cursor: grabbing !important; }
-#__gem_summarizer_panel__ .gem-title { font-weight: 600 !important; display: flex !important; align-items: center !important; gap: 6px !important; }
-#__gem_summarizer_panel__ .gem-logo { color: #7c6cff !important; }
+#__gem_summarizer_panel__ .gem-title { font-weight: 700 !important; display: flex !important; align-items: center !important; gap: 7px !important; }
+#__gem_summarizer_panel__ .gem-logo { color: #818cf8 !important; filter: drop-shadow(0 1px 5px rgba(99, 102, 241, 0.6)) !important; }
 #__gem_summarizer_panel__ .gem-header-actions { display: flex !important; gap: 4px !important; }
 #__gem_summarizer_panel__ .gem-icon {
   background: transparent !important;
   border: none !important;
-  color: #9aa0ad !important;
+  color: #94a3b8 !important;
   font-size: 16px !important;
-  width: 26px !important; height: 26px !important;
+  width: 28px !important; height: 28px !important;
   cursor: pointer !important;
-  border-radius: 6px !important;
+  border-radius: 10px !important;
   line-height: 1 !important;
   padding: 0 !important;
+  transition: background 0.2s, color 0.2s !important;
 }
-#__gem_summarizer_panel__ .gem-icon:hover { background: #232733 !important; color: #fff !important; }
+#__gem_summarizer_panel__ .gem-icon:hover { background: rgba(255, 255, 255, 0.1) !important; color: #fff !important; }
 
 #__gem_summarizer_panel__ .gem-body {
-  padding: 12px !important;
+  padding: 14px !important;
   overflow-y: auto !important;
   flex: 1 !important;
+  /* Hide the scrollbar while keeping scroll functional. */
+  scrollbar-width: none !important;        /* Firefox */
+  -ms-overflow-style: none !important;     /* legacy Edge/IE */
 }
+#__gem_summarizer_panel__ .gem-body::-webkit-scrollbar { display: none !important; } /* Chrome/Edge/Safari */
 #__gem_summarizer_panel__.gem-minimized .gem-body { display: none !important; }
 
-#__gem_summarizer_panel__ .gem-pageinfo { color: #9aa0ad !important; font-size: 11px !important; margin-bottom: 10px !important; }
+#__gem_summarizer_panel__ .gem-pageinfo { color: #94a3b8 !important; font-size: 11px !important; margin-bottom: 12px !important; }
 
 #__gem_summarizer_panel__ .gem-btn {
   display: flex !important;
@@ -67,25 +80,34 @@
   font-size: 14px !important;
   line-height: 1.2 !important;
   border: none !important;
-  border-radius: 8px !important;
-  padding: 10px 14px !important;
+  border-radius: 14px !important;
+  padding: 12px 16px !important;
   margin: 0 !important;
   cursor: pointer !important;
-  font-weight: 500 !important;
+  font-weight: 600 !important;
   text-align: center !important;
   white-space: nowrap !important;
   box-sizing: border-box !important;
+  transition: filter 0.2s, transform 0.08s !important;
 }
-#__gem_summarizer_panel__ .gem-primary { background: #7c6cff !important; color: #fff !important; width: 100% !important; }
-#__gem_summarizer_panel__ .gem-primary:hover { background: #8f80ff !important; }
-#__gem_summarizer_panel__ .gem-primary:disabled { opacity: 0.55 !important; cursor: not-allowed !important; }
+#__gem_summarizer_panel__ .gem-primary {
+  background: linear-gradient(135deg, #6366f1 0%, #818cf8 100%) !important;
+  color: #fff !important;
+  width: 100% !important;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.25) inset,
+    0 6px 18px rgba(99, 102, 241, 0.5) !important;
+}
+#__gem_summarizer_panel__ .gem-primary:hover { filter: brightness(1.1) !important; }
+#__gem_summarizer_panel__ .gem-primary:active { transform: scale(0.97) !important; }
+#__gem_summarizer_panel__ .gem-primary:disabled { opacity: 0.45 !important; cursor: not-allowed !important; box-shadow: none !important; }
 
-#__gem_summarizer_panel__ .gem-status { padding: 9px 11px !important; border-radius: 8px !important; margin-top: 10px !important; font-size: 13px !important; }
-#__gem_summarizer_panel__ .gem-loading { background: #232733 !important; color: #9aa0ad !important; }
-#__gem_summarizer_panel__ .gem-error { background: rgba(255,107,107,0.12) !important; color: #ff6b6b !important; }
+#__gem_summarizer_panel__ .gem-status { padding: 10px 12px !important; border-radius: 13px !important; margin-top: 10px !important; font-size: 13px !important; }
+#__gem_summarizer_panel__ .gem-loading { background: rgba(255, 255, 255, 0.06) !important; color: #94a3b8 !important; border: 1px solid rgba(148, 163, 184, 0.2) !important; }
+#__gem_summarizer_panel__ .gem-error { background: rgba(255, 69, 58, 0.18) !important; color: #ff6b61 !important; border: 1px solid rgba(255, 69, 58, 0.32) !important; }
 #__gem_summarizer_panel__ .gem-spin {
   display: inline-block !important; width: 12px !important; height: 12px !important;
-  border: 2px solid #9aa0ad !important; border-top-color: transparent !important;
+  border: 2px solid #818cf8 !important; border-top-color: transparent !important;
   border-radius: 50% !important; margin-right: 8px !important; vertical-align: -1px !important;
   animation: gem-spin 0.7s linear infinite !important;
 }
@@ -93,15 +115,18 @@
 
 #__gem_summarizer_panel__ .gem-label {
   display: flex !important; justify-content: space-between !important; align-items: center !important;
-  font-size: 11px !important; text-transform: uppercase !important; letter-spacing: 0.6px !important;
-  color: #9aa0ad !important; margin: 14px 0 8px !important;
+  font-size: 11px !important; text-transform: uppercase !important; letter-spacing: 0.7px !important;
+  color: #94a3b8 !important; margin: 16px 0 8px !important; padding-left: 2px !important;
 }
-#__gem_summarizer_panel__ .gem-link { background: none !important; border: none !important; color: #7c6cff !important; cursor: pointer !important; font-size: 11px !important; padding: 0 !important; }
+#__gem_summarizer_panel__ .gem-link { background: none !important; border: none !important; color: #818cf8 !important; cursor: pointer !important; font-size: 11px !important; font-weight: 600 !important; padding: 0 !important; }
 #__gem_summarizer_panel__ .gem-link:hover { text-decoration: underline !important; }
 
 #__gem_summarizer_panel__ .gem-summary-content {
-  background: #1a1d27 !important; border: 1px solid #2c3140 !important; border-radius: 10px !important;
-  padding: 12px 14px !important; font-size: 13.5px !important;
+  background: rgba(255, 255, 255, 0.06) !important; border: 1px solid rgba(148, 163, 184, 0.2) !important; border-radius: 18px !important;
+  padding: 14px 16px !important; font-size: 13.5px !important;
+  box-shadow:
+    0 1px 1px rgba(255, 255, 255, 0.1) inset,
+    0 8px 24px rgba(0, 0, 0, 0.3) !important;
 }
 #__gem_summarizer_panel__ .gem-summary-content p { margin: 0 0 8px !important; }
 #__gem_summarizer_panel__ .gem-summary-content ul { margin: 4px 0 8px !important; padding-left: 18px !important; }
@@ -109,36 +134,68 @@
 #__gem_summarizer_panel__ .gem-summary-content strong { color: #fff !important; }
 
 #__gem_summarizer_panel__ .gem-chatlog { display: flex !important; flex-direction: column !important; gap: 8px !important; margin-bottom: 10px !important; }
-#__gem_summarizer_panel__ .gem-msg { padding: 8px 11px !important; border-radius: 10px !important; font-size: 13px !important; max-width: 90% !important; word-wrap: break-word !important; }
-#__gem_summarizer_panel__ .gem-user { background: #7c6cff !important; color: #fff !important; align-self: flex-end !important; border-bottom-right-radius: 3px !important; }
-#__gem_summarizer_panel__ .gem-model { background: #232733 !important; align-self: flex-start !important; border-bottom-left-radius: 3px !important; }
+#__gem_summarizer_panel__ .gem-msg { padding: 9px 13px !important; border-radius: 18px !important; font-size: 13px !important; max-width: 90% !important; word-wrap: break-word !important; }
+#__gem_summarizer_panel__ .gem-user {
+  background: linear-gradient(135deg, #6366f1 0%, #818cf8 100%) !important; color: #fff !important;
+  align-self: flex-end !important; border-bottom-right-radius: 5px !important;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.45) !important;
+}
+#__gem_summarizer_panel__ .gem-model {
+  background: rgba(255, 255, 255, 0.08) !important; border: 1px solid rgba(148, 163, 184, 0.2) !important;
+  align-self: flex-start !important; border-bottom-left-radius: 5px !important;
+}
 #__gem_summarizer_panel__ .gem-model p { margin: 0 0 6px !important; }
 #__gem_summarizer_panel__ .gem-model ul { margin: 4px 0 !important; padding-left: 16px !important; }
-#__gem_summarizer_panel__ .gem-thinking { color: #9aa0ad !important; font-style: italic !important; }
+#__gem_summarizer_panel__ .gem-thinking { color: #94a3b8 !important; font-style: italic !important; }
 
-#__gem_summarizer_panel__ .gem-chatform { display: flex !important; gap: 6px !important; }
+#__gem_summarizer_panel__ .gem-chatform { display: flex !important; gap: 7px !important; }
 #__gem_summarizer_panel__ .gem-chatform input {
-  flex: 1 !important; background: #1a1d27 !important; border: 1px solid #2c3140 !important;
-  border-radius: 8px !important; color: #e6e8ee !important; padding: 9px 11px !important;
+  flex: 1 !important; background: rgba(255, 255, 255, 0.08) !important; border: 1px solid rgba(148, 163, 184, 0.2) !important;
+  border-radius: 14px !important; color: #f0f2f8 !important; padding: 10px 13px !important;
   font-size: 13px !important; font-family: inherit !important; outline: none !important;
+  transition: border-color 0.2s, box-shadow 0.2s !important;
 }
-#__gem_summarizer_panel__ .gem-chatform input:focus { border-color: #7c6cff !important; }
-#__gem_summarizer_panel__ .gem-send { background: #7c6cff !important; color: #fff !important; width: 42px !important; padding: 0 !important; font-size: 14px !important; border: none !important; border-radius: 8px !important; cursor: pointer !important; }
-#__gem_summarizer_panel__ .gem-send:hover { background: #8f80ff !important; }
-#__gem_summarizer_panel__ .gem-send:disabled { opacity: 0.5 !important; cursor: not-allowed !important; }
+#__gem_summarizer_panel__ .gem-chatform input::placeholder { color: #94a3b8 !important; }
+#__gem_summarizer_panel__ .gem-chatform input:focus { border-color: #6366f1 !important; box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.22) !important; }
+#__gem_summarizer_panel__ .gem-send {
+  background: linear-gradient(135deg, #6366f1 0%, #818cf8 100%) !important; color: #fff !important;
+  width: 44px !important; padding: 0 !important; font-size: 14px !important; border: none !important; border-radius: 14px !important;
+  cursor: pointer !important; box-shadow: 0 4px 12px rgba(99, 102, 241, 0.45) !important;
+  transition: filter 0.2s, transform 0.08s !important;
+}
+#__gem_summarizer_panel__ .gem-send:hover { filter: brightness(1.1) !important; }
+#__gem_summarizer_panel__ .gem-send:active { transform: scale(0.95) !important; }
+#__gem_summarizer_panel__ .gem-send:disabled { opacity: 0.45 !important; cursor: not-allowed !important; box-shadow: none !important; }
 
 #__gem_summarizer_panel__ .gem-footer {
-  padding: 8px 12px !important;
-  border-top: 1px solid #2c3140 !important;
-  background: #1a1d27 !important;
-  font-size: 11px !important;
-  color: #9aa0ad !important;
-  text-align: center !important;
+  padding: 10px 14px !important;
+  border-top: none !important;
+  background: transparent !important;
+  display: flex !important;
+  justify-content: center !important;
 }
 #__gem_summarizer_panel__.gem-minimized .gem-footer { display: none !important; }
+#__gem_summarizer_panel__ .gem-credit {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(148, 163, 184, 0.22) !important;
+  border-radius: 20px !important;
+  padding: 5px 12px !important;
+  font-size: 10.5px !important;
+  color: #94a3b8 !important;
+  box-shadow: 0 1px 1px rgba(255, 255, 255, 0.12) inset, 0 2px 8px rgba(0, 0, 0, 0.25) !important;
+}
+#__gem_summarizer_panel__ .gem-credit::before {
+  content: "✦" !important;
+  color: #818cf8 !important;
+  font-size: 10px !important;
+}
 #__gem_summarizer_panel__ .gem-footer a {
-  color: #7c6cff !important;
+  color: #818cf8 !important;
   text-decoration: none !important;
+  font-weight: 700 !important;
 }
 #__gem_summarizer_panel__ .gem-footer a:hover { text-decoration: underline !important; }
 

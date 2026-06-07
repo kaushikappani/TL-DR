@@ -29,12 +29,35 @@
     return BOILERPLATE_HINTS.test(id) || BOILERPLATE_HINTS.test(cls);
   }
 
-  // Score a candidate container by how much real paragraph text it holds.
+  // Block-level tags that normally hold real prose.
+  const TEXT_TAGS = /^(P|LI|BLOCKQUOTE|H1|H2|H3|H4|H5|H6|PRE|TD|FIGCAPTION)$/;
+
+  // A "text leaf" is an element that carries its own visible text but has no
+  // block-level element children — i.e. the actual unit of content. Many web
+  // apps render prose into <div>/<span> rather than <p>, so we treat those as
+  // text leaves too instead of only counting <p>/<li>/<blockquote>.
+  function isTextLeaf(el) {
+    const tag = el.tagName;
+    if (TEXT_TAGS.test(tag)) return true;
+    if (tag !== "DIV" && tag !== "SPAN" && tag !== "ARTICLE" && tag !== "SECTION") return false;
+    // Only count it if it doesn't contain another block/text container, so we
+    // don't double-count a wrapper plus the elements inside it.
+    return !el.querySelector(
+      "p, li, blockquote, h1, h2, h3, h4, h5, h6, pre, td, figcaption, div, span, article, section"
+    );
+  }
+
+  // Score a candidate container by how much real text it holds (prose in
+  // p/li/blockquote AND text rendered into leaf div/span nodes).
   function scoreNode(node) {
     let textLen = 0;
-    const paragraphs = node.querySelectorAll("p, li, blockquote");
-    paragraphs.forEach((p) => {
-      const t = (p.innerText || "").trim();
+    const blocks = node.querySelectorAll(
+      "p, li, blockquote, h1, h2, h3, h4, h5, h6, pre, td, figcaption, div, span"
+    );
+    blocks.forEach((el) => {
+      if (isHidden(el) || looksLikeBoilerplate(el)) return;
+      if (!isTextLeaf(el)) return;
+      const t = (el.innerText || "").trim();
       if (t.length > 25) textLen += t.length;
     });
     // commas correlate with prose density
@@ -70,6 +93,17 @@
     return best || document.body;
   }
 
+  // True if some ancestor (up to root) was already captured as a text unit —
+  // used to avoid emitting both a <p> and the <span>s nested inside it.
+  function hasCapturedAncestor(el, root) {
+    let p = el.parentElement;
+    while (p && p !== root) {
+      if (TEXT_TAGS.test(p.tagName)) return true;
+      p = p.parentElement;
+    }
+    return false;
+  }
+
   function extractText(root) {
     const parts = [];
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, {
@@ -77,8 +111,10 @@
         if (BOILERPLATE.has(el.tagName)) return NodeFilter.FILTER_REJECT;
         if (isHidden(el)) return NodeFilter.FILTER_REJECT;
         if (looksLikeBoilerplate(el)) return NodeFilter.FILTER_REJECT;
-        const tag = el.tagName;
-        if (/^(P|LI|BLOCKQUOTE|H1|H2|H3|H4|H5|H6|PRE|TD|FIGCAPTION)$/.test(tag)) {
+        // Accept real block text AND text-leaf div/span (app-rendered content).
+        // isTextLeaf() guarantees a div/span has no block children; the ancestor
+        // check stops a <p>'s inner <span>s from being emitted a second time.
+        if (isTextLeaf(el) && !hasCapturedAncestor(el, root)) {
           return NodeFilter.FILTER_ACCEPT;
         }
         return NodeFilter.FILTER_SKIP;

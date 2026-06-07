@@ -47,6 +47,36 @@ function send(message) {
   });
 }
 
+// Open a streaming port for a SUMMARIZE/ASK request. onChunk(text) fires for
+// each incremental piece; resolves with the final {ok, summary|answer, page}.
+function streamRequest(message, onChunk) {
+  return new Promise((resolve) => {
+    let port;
+    try {
+      port = chrome.runtime.connect({ name: "stream" });
+    } catch (e) {
+      resolve({ ok: false, error: "Couldn't reach the extension." });
+      return;
+    }
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      try { port.disconnect(); } catch (_) {}
+      resolve(result);
+    };
+    port.onMessage.addListener((m) => {
+      if (m.type === "chunk") onChunk(m.text);
+      else if (m.type === "done") finish({ ok: true, ...m });
+      else if (m.type === "error") finish({ ok: false, error: m.error });
+    });
+    port.onDisconnect.addListener(() => {
+      finish({ ok: false, error: chrome.runtime.lastError?.message || "Connection lost." });
+    });
+    port.postMessage(message);
+  });
+}
+
 function showStatus(text, kind = "loading") {
   els.status.className = `status ${kind}`;
   els.status.innerHTML =
@@ -155,7 +185,20 @@ async function doSummarize() {
 
   // Re-read the LIVE page/PDF each time (handles SPA/email view changes). The
   // background worker holds any PDF bytes; we don't ship them through messaging.
-  const resp = await send({ type: "SUMMARIZE" });
+  // Stream the summary in token-by-token for instant feedback.
+  let acc = "";
+  let revealed = false;
+  const onChunk = (text) => {
+    acc += text;
+    if (!revealed) {
+      hideStatus();
+      els.summarySection.classList.remove("hidden");
+      revealed = true;
+    }
+    els.summaryContent.innerHTML = renderMarkdown(acc);
+  };
+
+  const resp = await streamRequest({ type: "SUMMARIZE" }, onChunk);
   setBusy(false);
 
   if (!resp.ok) {
@@ -199,18 +242,23 @@ async function ask(question) {
   els.chatInput.value = "";
 
   setBusy(true);
-  const thinking = addMessage("model", "Thinking…", { thinking: true });
+  const bubble = addMessage("model", "Thinking…", { thinking: true });
 
   // The background reuses the cached page (incl. PDF bytes) for this tab.
-  const resp = await send({
-    type: "ASK",
-    history: state.history,
-  });
+  // Stream the answer into the bubble as it arrives.
+  let acc = "";
+  const onChunk = (text) => {
+    acc += text;
+    bubble.classList.remove("thinking");
+    bubble.innerHTML = renderMarkdown(acc);
+    bubble.scrollIntoView({ block: "end" });
+  };
 
-  thinking.remove();
+  const resp = await streamRequest({ type: "ASK", history: state.history }, onChunk);
   setBusy(false);
 
   if (!resp.ok) {
+    bubble.remove();
     if (resp.error === "NO_API_KEY") {
       els.setupBanner.classList.remove("hidden");
       return;
@@ -221,7 +269,8 @@ async function ask(question) {
     return;
   }
 
-  addMessage("model", resp.answer);
+  bubble.classList.remove("thinking");
+  bubble.innerHTML = renderMarkdown(resp.answer);
   state.history.push({ role: "model", text: resp.answer });
   els.chatInput.focus();
 }

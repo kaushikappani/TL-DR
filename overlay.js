@@ -62,8 +62,10 @@
         </form>
       </div>
       <div class="gem-footer">
-        Built by
-        <a href="https://kaushikappani.github.io/portfolio/" target="_blank" rel="noopener">Kaushik Appani</a>
+        <span class="gem-credit">
+          Built by
+          <a href="https://kaushikappani.github.io/portfolio/" target="_blank" rel="noopener">Kaushik Appani</a>
+        </span>
       </div>
     </div>
   `;
@@ -103,6 +105,35 @@
           resolve({ ok: false, error: chrome.runtime.lastError.message });
         } else resolve(resp);
       });
+    });
+  }
+
+  // Streaming port: post one request, receive {chunk}* then {done}|{error}.
+  function streamRequest(message, onChunk) {
+    return new Promise((resolve) => {
+      let port;
+      try {
+        port = chrome.runtime.connect({ name: "stream" });
+      } catch (e) {
+        resolve({ ok: false, error: "Couldn't reach the extension." });
+        return;
+      }
+      let settled = false;
+      const finish = (result) => {
+        if (settled) return;
+        settled = true;
+        try { port.disconnect(); } catch (_) {}
+        resolve(result);
+      };
+      port.onMessage.addListener((m) => {
+        if (m.type === "chunk") onChunk(m.text);
+        else if (m.type === "done") finish({ ok: true, ...m });
+        else if (m.type === "error") finish({ ok: false, error: m.error });
+      });
+      port.onDisconnect.addListener(() => {
+        finish({ ok: false, error: chrome.runtime.lastError?.message || "Connection lost." });
+      });
+      port.postMessage(message);
     });
   }
 
@@ -196,7 +227,21 @@
       // gets summarized, not the snapshot from when the panel opened.
       const page = await ensurePage(true);
       ui.pageinfo.textContent = `${page.siteName} · ${page.wordCount} words`;
-      const resp = await send({ type: "SUMMARIZE", page });
+
+      // Stream the summary in token-by-token.
+      let acc = "";
+      let revealed = false;
+      const onChunk = (text) => {
+        acc += text;
+        if (!revealed) {
+          hideStatus();
+          ui.summaryWrap.classList.remove("gem-hidden");
+          revealed = true;
+        }
+        ui.summary.innerHTML = renderMarkdown(acc);
+      };
+
+      const resp = await streamRequest({ type: "SUMMARIZE", page }, onChunk);
       if (!resp.ok) throw new Error(resp.error);
       hideStatus();
       state.page = resp.page || page;
@@ -221,17 +266,25 @@
     state.history.push({ role: "user", text: question });
     ui.input.value = "";
     setBusy(true);
-    const thinking = addMessage("model", "Thinking…", { thinking: true });
+    const bubble = addMessage("model", "Thinking…", { thinking: true });
     try {
       const page = await ensurePage();
-      const resp = await send({ type: "ASK", page, history: state.history });
-      thinking.remove();
+      // Stream the answer into the bubble as it arrives.
+      let acc = "";
+      const onChunk = (text) => {
+        acc += text;
+        bubble.classList.remove("gem-thinking");
+        bubble.innerHTML = renderMarkdown(acc);
+        bubble.scrollIntoView({ block: "end" });
+      };
+      const resp = await streamRequest({ type: "ASK", page, history: state.history }, onChunk);
       if (!resp.ok) throw new Error(resp.error);
-      addMessage("model", resp.answer);
+      bubble.classList.remove("gem-thinking");
+      bubble.innerHTML = renderMarkdown(resp.answer);
       state.history.push({ role: "model", text: resp.answer });
       ui.input.focus();
     } catch (e) {
-      thinking.remove();
+      bubble.remove();
       addMessage("model", "⚠ " + e.message);
       state.history.pop();
     } finally {

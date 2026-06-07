@@ -2,7 +2,13 @@
 // Service worker: orchestrates page extraction, AI provider calls, context
 // menus, and injection of the floating overlay panel.
 
-import { summarizePage, answerQuestion, getActive } from "./ai.js";
+import {
+  summarizePage,
+  answerQuestion,
+  summarizePageStream,
+  answerQuestionStream,
+  getActive,
+} from "./ai.js";
 import { extractPdfText } from "./pdftext.js";
 
 const RESTRICTED = /^(chrome|edge|about|chrome-extension|devtools|view-source|moz-extension):/i;
@@ -264,6 +270,53 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
 // ---- toolbar icon: we keep the popup as default, but expose overlay via menu.
 // (The action popup opens automatically because it's set in the manifest.)
+
+// ---- streaming router (long-lived port) ----
+// sendMessage/sendResponse is one-shot and can't stream. Clients that want
+// token-by-token output open a port named "stream" and post a single request;
+// we reply with {type:'chunk'} messages, then {type:'done'} or {type:'error'}.
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== "stream") return;
+
+  port.onMessage.addListener((msg) => {
+    (async () => {
+      try {
+        const tab = await getActiveTab();
+        const onChunk = (text) => {
+          try {
+            port.postMessage({ type: "chunk", text });
+          } catch (_) {
+            // port closed (panel/popup went away) — nothing to do.
+          }
+        };
+
+        if (msg.type === "SUMMARIZE") {
+          const page = msg.page || (await extractTab(tab.id, tab.url, tab));
+          await cacheSet(tab.id, tab.url, page);
+          const summary = await summarizePageStream(page, onChunk);
+          port.postMessage({ type: "done", summary, page: stripHeavy(page) });
+        } else if (msg.type === "ASK") {
+          let page = await cacheGet(tab.id, tab.url);
+          if (!page) {
+            page = await extractTab(tab.id, tab.url, tab);
+            await cacheSet(tab.id, tab.url, page);
+          }
+          const answer = await answerQuestionStream(page, msg.history || [], onChunk);
+          port.postMessage({ type: "done", answer });
+        } else {
+          port.postMessage({ type: "error", error: "Unknown stream request." });
+        }
+      } catch (e) {
+        const error = e && e.message === "NO_API_KEY"
+          ? "NO_API_KEY"
+          : (e && e.message) || "Something went wrong.";
+        try {
+          port.postMessage({ type: "error", error });
+        } catch (_) {}
+      }
+    })();
+  });
+});
 
 // ---- message router (used by both popup and overlay) ----
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
