@@ -3,19 +3,45 @@ import { PROVIDERS, getSettings } from "./ai.js";
 
 const els = {
   providerGroup: document.getElementById("provider"),
-  toggleBtns: document.querySelectorAll(".toggle-btn"),
+  toggleBtns: document.querySelectorAll("#provider .toggle-btn"),
   geminiPanel: document.getElementById("geminiPanel"),
   groqPanel: document.getElementById("groqPanel"),
   geminiKey: document.getElementById("geminiKey"),
   geminiModel: document.getElementById("geminiModel"),
   groqKey: document.getElementById("groqKey"),
   groqModel: document.getElementById("groqModel"),
+  // personalization
+  prefLength: document.getElementById("prefLength"),
+  prefFormat: document.getElementById("prefFormat"),
+  prefLevel: document.getElementById("prefLevel"),
+  prefLanguage: document.getElementById("prefLanguage"),
+  prefTone: document.getElementById("prefTone"),
   saveBtn: document.getElementById("saveBtn"),
   testBtn: document.getElementById("testBtn"),
   status: document.getElementById("status"),
 };
 
 let currentProvider = "gemini";
+
+// A segmented control whose buttons carry data-val; tracks one selected value.
+function initSegment(group) {
+  group.addEventListener("click", (e) => {
+    const btn = e.target.closest(".toggle-btn");
+    if (!btn) return;
+    setSegment(group, btn.dataset.val);
+  });
+}
+function setSegment(group, val) {
+  group.querySelectorAll(".toggle-btn").forEach((b) => {
+    const active = b.dataset.val === val;
+    b.classList.toggle("active", active);
+    b.setAttribute("aria-selected", active ? "true" : "false");
+  });
+}
+function getSegment(group) {
+  const active = group.querySelector(".toggle-btn.active");
+  return active ? active.dataset.val : null;
+}
 
 function status(text, kind) {
   els.status.className = `status ${kind}`;
@@ -42,11 +68,21 @@ async function load() {
   els.groqKey.value = s.groqKey || "";
   els.groqModel.value = s.groqModel;
   setProvider(s.provider);
+
+  // personalization
+  setSegment(els.prefLength, s.prefLength);
+  setSegment(els.prefFormat, s.prefFormat);
+  setSegment(els.prefLevel, s.prefLevel);
+  els.prefLanguage.value = s.prefLanguage;
+  els.prefTone.value = s.prefTone || "";
 }
 
 els.toggleBtns.forEach((btn) => {
   btn.addEventListener("click", () => setProvider(btn.dataset.provider));
 });
+
+// Preference segmented controls.
+[els.prefLength, els.prefFormat, els.prefLevel].forEach(initSegment);
 
 // Show/hide key buttons.
 document.querySelectorAll(".toggle-key").forEach((btn) => {
@@ -69,6 +105,12 @@ els.saveBtn.addEventListener("click", async () => {
     geminiModel: els.geminiModel.value,
     groqKey: els.groqKey.value.trim(),
     groqModel: els.groqModel.value,
+    // personalization
+    prefLength: getSegment(els.prefLength) || "standard",
+    prefFormat: getSegment(els.prefFormat) || "bullets",
+    prefLevel: getSegment(els.prefLevel) || "general",
+    prefLanguage: els.prefLanguage.value,
+    prefTone: els.prefTone.value.trim().slice(0, 300),
   });
   status("Saved! You can close this tab.", "ok");
 });

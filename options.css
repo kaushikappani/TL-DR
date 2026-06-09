@@ -81,7 +81,7 @@ h1 {
   margin: 18px 0 7px;
   padding-left: 2px;
 }
-input, select {
+input, select, textarea {
   width: 100%;
   background: var(--glass-strong);
   border: 1px solid var(--glass-border);
@@ -95,9 +95,26 @@ input, select {
   -webkit-backdrop-filter: blur(18px) saturate(160%);
   transition: border-color 0.2s, box-shadow 0.2s;
 }
-input::placeholder { color: var(--text-dim); }
+input::placeholder, textarea::placeholder { color: var(--text-dim); }
+textarea { resize: vertical; line-height: 1.5; }
 select option { background: #1e293b; color: var(--text); }
-input:focus, select:focus {
+
+/* Personalization section */
+.divider {
+  border: none;
+  border-top: 1px solid var(--hairline);
+  margin: 28px 0 4px;
+}
+.section-heading {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 16px 0 2px;
+  letter-spacing: -0.1px;
+}
+.optional { color: var(--text-dim); font-weight: 400; text-transform: none; letter-spacing: 0; }
+/* Smaller segmented control for the preference toggles. */
+.toggle-group.seg .toggle-btn { padding: 9px 10px; font-size: 13px; }
+input:focus, select:focus, textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }

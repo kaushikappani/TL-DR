@@ -21,6 +21,15 @@ const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 
 // ---- settings ----------------------------------------------------------
 
+// Defaults for the personalization preferences.
+export const PREF_DEFAULTS = {
+  prefLength: "standard",   // brief | standard | detailed
+  prefFormat: "bullets",    // bullets | paragraph | eli5
+  prefLevel: "general",     // beginner | general | expert
+  prefLanguage: "Auto",     // "Auto" = match the page, else a language name
+  prefTone: "",             // free-text persona/tone, e.g. "explain like a developer"
+};
+
 export async function getSettings() {
   const s = await chrome.storage.sync.get([
     "provider",
@@ -31,6 +40,8 @@ export async function getSettings() {
     // legacy keys from the Gemini-only version
     "apiKey",
     "model",
+    // personalization preferences
+    ...Object.keys(PREF_DEFAULTS),
   ]);
 
   const provider = s.provider || "gemini";
@@ -41,7 +52,15 @@ export async function getSettings() {
   const groqKey = s.groqKey || "";
   const groqModel = s.groqModel || PROVIDERS.groq.defaultModel;
 
-  return { provider, geminiKey, geminiModel, groqKey, groqModel };
+  const prefs = {
+    prefLength: s.prefLength || PREF_DEFAULTS.prefLength,
+    prefFormat: s.prefFormat || PREF_DEFAULTS.prefFormat,
+    prefLevel: s.prefLevel || PREF_DEFAULTS.prefLevel,
+    prefLanguage: s.prefLanguage || PREF_DEFAULTS.prefLanguage,
+    prefTone: typeof s.prefTone === "string" ? s.prefTone : PREF_DEFAULTS.prefTone,
+  };
+
+  return { provider, geminiKey, geminiModel, groqKey, groqModel, ...prefs };
 }
 
 /** The active provider's key + model. */
@@ -67,11 +86,66 @@ const QA_SYSTEM =
   "Do not present outside knowledge as if it came from the document, and don't fabricate specifics. " +
   "If you are unsure or the topic is beyond your knowledge, say so plainly. Be concise.";
 
-const SUMMARY_INSTRUCTIONS =
-  "\n\n---\nWrite a summary of the document above in this exact format:\n\n" +
-  "**TL;DR:** one or two sentences capturing the core point.\n\n" +
-  "**Key points:**\n- 3 to 6 short bullet points of the most important takeaways.\n\n" +
-  "Keep it tight. No preamble, just the summary.";
+// ---- personalization ---------------------------------------------------
+
+// Per-length tuning for the summary format + token budget.
+const LENGTH_SPEC = {
+  brief:    { bullets: "2 to 3", tldr: "one sentence",        maxTokens: 400 },
+  standard: { bullets: "3 to 6", tldr: "one or two sentences", maxTokens: 800 },
+  detailed: { bullets: "6 to 10", tldr: "two or three sentences", maxTokens: 1400 },
+};
+
+function summaryInstructions(prefs) {
+  const len = LENGTH_SPEC[prefs.prefLength] || LENGTH_SPEC.standard;
+
+  if (prefs.prefFormat === "paragraph") {
+    return (
+      "\n\n---\nWrite a summary of the document above as flowing prose:\n\n" +
+      `**TL;DR:** ${len.tldr} capturing the core point.\n\n` +
+      "**Summary:** a short, well-structured paragraph (no bullet list) covering the most " +
+      "important points.\n\nNo preamble, just the summary."
+    );
+  }
+  if (prefs.prefFormat === "eli5") {
+    return (
+      "\n\n---\nExplain the document above like I'm five — very simple words, friendly tone:\n\n" +
+      `**In short:** ${len.tldr}, in the simplest possible terms.\n\n` +
+      `**The main ideas:**\n- ${len.bullets} super-simple bullet points.\n\n` +
+      "Avoid jargon entirely. No preamble."
+    );
+  }
+  // default: bullets
+  return (
+    "\n\n---\nWrite a summary of the document above in this exact format:\n\n" +
+    `**TL;DR:** ${len.tldr} capturing the core point.\n\n` +
+    `**Key points:**\n- ${len.bullets} short bullet points of the most important takeaways.\n\n` +
+    "Keep it tight. No preamble, just the summary."
+  );
+}
+
+// A system-prompt fragment expressing the user's persona/level/language prefs.
+// Returned empty when nothing meaningful is set.
+function prefsDirective(prefs) {
+  const parts = [];
+
+  if (prefs.prefLevel === "beginner") {
+    parts.push("Assume the reader is a beginner: use simple vocabulary and explain any technical terms.");
+  } else if (prefs.prefLevel === "expert") {
+    parts.push("Assume the reader is an expert: be technical and precise; skip basic explanations.");
+  }
+
+  if (prefs.prefLanguage && prefs.prefLanguage !== "Auto") {
+    parts.push(`Always respond in ${prefs.prefLanguage}, regardless of the document's language.`);
+  }
+
+  const tone = (prefs.prefTone || "").trim();
+  if (tone) {
+    // User free-text — keep it clearly fenced as a style instruction.
+    parts.push(`Follow this style preference from the user: "${tone}".`);
+  }
+
+  return parts.length ? "\n\n" + parts.join(" ") : "";
+}
 
 function buildPageContext(page) {
   return [
@@ -88,16 +162,17 @@ function buildPageContext(page) {
 
 // ---- request builders (shared by streaming + non-streaming) ------------
 
-function summaryRequest(page) {
+function summaryRequest(page, prefs) {
+  const len = LENGTH_SPEC[prefs.prefLength] || LENGTH_SPEC.standard;
   return {
-    system: SUMMARY_SYSTEM,
-    turns: [{ role: "user", text: buildPageContext(page) + SUMMARY_INSTRUCTIONS }],
+    system: SUMMARY_SYSTEM + prefsDirective(prefs),
+    turns: [{ role: "user", text: buildPageContext(page) + summaryInstructions(prefs) }],
     temperature: 0.3,
-    maxTokens: 800,
+    maxTokens: len.maxTokens,
   };
 }
 
-function answerRequest(page, history) {
+function answerRequest(page, history, prefs) {
   const turns = [
     {
       role: "user",
@@ -109,14 +184,15 @@ function answerRequest(page, history) {
     { role: "model", text: "Got it. I've read the page and will answer questions about it, drawing on general knowledge where the page falls short." },
     ...history.map((m) => ({ role: m.role, text: m.text })),
   ];
-  return { system: QA_SYSTEM, turns, temperature: 0.3, maxTokens: 1024 };
+  return { system: QA_SYSTEM + prefsDirective(prefs), turns, temperature: 0.3, maxTokens: 1024 };
 }
 
 // ---- public API --------------------------------------------------------
 
 /** Summarize a page (text already extracted; PDFs are pre-extracted to text). */
 export async function summarizePage(page) {
-  return dispatch(summaryRequest(page));
+  const prefs = await getSettings();
+  return dispatch(summaryRequest(page, prefs));
 }
 
 /**
@@ -125,18 +201,21 @@ export async function summarizePage(page) {
  * @param {Array}  history [{ role: 'user'|'model', text }]
  */
 export async function answerQuestion(page, history) {
-  return dispatch(answerRequest(page, history));
+  const prefs = await getSettings();
+  return dispatch(answerRequest(page, history, prefs));
 }
 
 /**
  * Streaming variants. `onChunk(textPiece)` fires for each incremental token
  * chunk; the returned promise resolves with the full accumulated text.
  */
-export function summarizePageStream(page, onChunk) {
-  return dispatchStream(summaryRequest(page), onChunk);
+export async function summarizePageStream(page, onChunk) {
+  const prefs = await getSettings();
+  return dispatchStream(summaryRequest(page, prefs), onChunk);
 }
-export function answerQuestionStream(page, history, onChunk) {
-  return dispatchStream(answerRequest(page, history), onChunk);
+export async function answerQuestionStream(page, history, onChunk) {
+  const prefs = await getSettings();
+  return dispatchStream(answerRequest(page, history, prefs), onChunk);
 }
 
 /** Route a neutral request to the active provider (non-streaming). */

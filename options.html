@@ -61,6 +61,54 @@
         </select>
       </section>
 
+      <hr class="divider" />
+      <h2 class="section-heading">Personalization</h2>
+
+      <label class="field-label">Summary length</label>
+      <div class="toggle-group seg" id="prefLength" role="tablist">
+        <button type="button" class="toggle-btn" data-val="brief" role="tab">Brief</button>
+        <button type="button" class="toggle-btn" data-val="standard" role="tab">Standard</button>
+        <button type="button" class="toggle-btn" data-val="detailed" role="tab">Detailed</button>
+      </div>
+
+      <label class="field-label">Summary format</label>
+      <div class="toggle-group seg" id="prefFormat" role="tablist">
+        <button type="button" class="toggle-btn" data-val="bullets" role="tab">Bullets</button>
+        <button type="button" class="toggle-btn" data-val="paragraph" role="tab">Paragraph</button>
+        <button type="button" class="toggle-btn" data-val="eli5" role="tab">ELI5</button>
+      </div>
+
+      <label class="field-label">Reading level</label>
+      <div class="toggle-group seg" id="prefLevel" role="tablist">
+        <button type="button" class="toggle-btn" data-val="beginner" role="tab">Beginner</button>
+        <button type="button" class="toggle-btn" data-val="general" role="tab">General</button>
+        <button type="button" class="toggle-btn" data-val="expert" role="tab">Expert</button>
+      </div>
+
+      <label class="field-label" for="prefLanguage">Response language</label>
+      <select id="prefLanguage">
+        <option value="Auto">Auto (match the page)</option>
+        <option value="English">English</option>
+        <option value="Hindi">Hindi</option>
+        <option value="Spanish">Spanish</option>
+        <option value="French">French</option>
+        <option value="German">German</option>
+        <option value="Portuguese">Portuguese</option>
+        <option value="Arabic">Arabic</option>
+        <option value="Chinese (Simplified)">Chinese (Simplified)</option>
+        <option value="Japanese">Japanese</option>
+        <option value="Korean">Korean</option>
+        <option value="Russian">Russian</option>
+      </select>
+
+      <label class="field-label" for="prefTone">Tone / persona <span class="optional">(optional)</span></label>
+      <textarea
+        id="prefTone"
+        rows="2"
+        placeholder="e.g. Explain like I'm a developer. Be concise and a bit witty."
+      ></textarea>
+      <p class="hint">Free-text instructions for how the assistant should respond.</p>
+
       <div class="row">
         <button id="testBtn" class="ghost-btn">Test connection</button>
         <button id="saveBtn" class="primary-btn">Save</button>
