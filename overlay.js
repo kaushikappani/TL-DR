@@ -223,10 +223,16 @@
     showStatus("Reading and summarizing…");
     ui.summaryWrap.classList.add("gem-hidden");
     try {
-      // Re-read the live page so a changed view (new email, SPA navigation)
-      // gets summarized, not the snapshot from when the panel opened.
-      const page = await ensurePage(true);
-      ui.pageinfo.textContent = `${page.siteName} · ${page.wordCount} words`;
+      // Refresh the lightweight page info for the header.
+      const info = await ensurePage(true);
+      ui.pageinfo.textContent = `${info.siteName} · ${info.wordCount} words`;
+
+      // Only pass an explicit page for selection mode (it carries the real
+      // selected text). For normal pages, omit it so the background re-extracts
+      // the FULL live content server-side — same path the popup uses. The
+      // descriptor from EXTRACT has its heavy `text` stripped, so passing it
+      // here would summarize near-empty content.
+      const reqPage = state.selectionText ? info : undefined;
 
       // Stream the summary in token-by-token.
       let acc = "";
@@ -241,7 +247,7 @@
         ui.summary.innerHTML = renderMarkdown(acc);
       };
 
-      const resp = await streamRequest({ type: "SUMMARIZE", page }, onChunk);
+      const resp = await streamRequest({ type: "SUMMARIZE", page: reqPage }, onChunk);
       if (!resp.ok) throw new Error(resp.error);
       hideStatus();
       state.page = resp.page || page;
@@ -269,6 +275,10 @@
     const bubble = addMessage("model", "Thinking…", { thinking: true });
     try {
       const page = await ensurePage();
+      // Pass the page only in selection mode (it carries the real selected
+      // text). For normal pages, omit it so the background uses the full cached
+      // / freshly-extracted content — same path the popup uses.
+      const reqPage = state.selectionText ? page : undefined;
       // Stream the answer into the bubble as it arrives.
       let acc = "";
       const onChunk = (text) => {
@@ -277,7 +287,7 @@
         bubble.innerHTML = renderMarkdown(acc);
         bubble.scrollIntoView({ block: "end" });
       };
-      const resp = await streamRequest({ type: "ASK", page, history: state.history }, onChunk);
+      const resp = await streamRequest({ type: "ASK", page: reqPage, history: state.history }, onChunk);
       if (!resp.ok) throw new Error(resp.error);
       bubble.classList.remove("gem-thinking");
       bubble.innerHTML = renderMarkdown(resp.answer);

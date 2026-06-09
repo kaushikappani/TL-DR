@@ -296,7 +296,10 @@ chrome.runtime.onConnect.addListener((port) => {
           const summary = await summarizePageStream(page, onChunk);
           port.postMessage({ type: "done", summary, page: stripHeavy(page) });
         } else if (msg.type === "ASK") {
-          let page = await cacheGet(tab.id, tab.url);
+          // Honor an explicit page that carries its own text (e.g. selection
+          // mode). Otherwise use the page cached at summarize time, or re-extract
+          // live so we never answer blind.
+          let page = msg.page && msg.page.text ? msg.page : await cacheGet(tab.id, tab.url);
           if (!page) {
             page = await extractTab(tab.id, tab.url, tab);
             await cacheSet(tab.id, tab.url, page);
@@ -347,11 +350,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         }
         case "SUMMARIZE": {
           const tab = await getActiveTab();
-          // Honor an explicitly-passed page (e.g. "Summarize selection", where
-          // the caller supplies the selected text). Otherwise re-read the live
-          // page (handles SPA/email/PDF view changes). Either way, cache it so
-          // the follow-up Q&A uses the exact same content.
-          const page = msg.page || (await extractTab(tab.id, tab.url, tab));
+          // Honor an explicitly-passed page that carries its own text (e.g.
+          // "Summarize selection"). A page descriptor with its heavy text
+          // stripped must NOT be used — re-read the live page instead (handles
+          // SPA/email/PDF view changes). Either way, cache it so the follow-up
+          // Q&A uses the exact same content.
+          const page = (msg.page && msg.page.text) ? msg.page : (await extractTab(tab.id, tab.url, tab));
           await cacheSet(tab.id, tab.url, page);
           const summary = await summarizePage(page);
           sendResponse({ ok: true, summary, page: stripHeavy(page) });
@@ -359,9 +363,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         }
         case "ASK": {
           const tab = await getActiveTab();
-          // Use the page cached at summarize time. If the worker restarted and
-          // the cache is gone, re-extract live so we never answer blind.
-          let page = await cacheGet(tab.id, tab.url);
+          // Honor an explicit text-bearing page (selection mode); else use the
+          // page cached at summarize time, or re-extract live so we never
+          // answer blind.
+          let page = (msg.page && msg.page.text) ? msg.page : await cacheGet(tab.id, tab.url);
           if (!page) {
             page = await extractTab(tab.id, tab.url, tab);
             await cacheSet(tab.id, tab.url, page);
