@@ -73,6 +73,7 @@ function normalizeCustom(raw) {
 export const MCP_DEFAULTS = {
   enabled: false,
   confirm: true,    // ask the user before each tool call
+  actions: true,    // offer model-written quick actions after a summary
   maxCalls: 4,      // tool calls allowed per user message
   servers: [],      // [{ id, name, url, headers, enabled, tools: [names] }]
 };
@@ -82,6 +83,7 @@ function normalizeMcp(raw) {
   return {
     enabled: !!raw?.enabled,
     confirm: raw?.confirm !== false,
+    actions: raw?.actions !== false,
     maxCalls: Math.min(10, Math.max(1, Number(raw?.maxCalls) || MCP_DEFAULTS.maxCalls)),
     servers: servers
       .filter((sv) => sv && typeof sv.url === "string")
@@ -323,6 +325,98 @@ export async function answerQuestionStream(page, history, onChunk, onTool, onCon
   // loop emits it as a single chunk instead of token by token.
   if (!registry) return dispatchStream(req, onChunk);
   return runWithTools(req, registry, onChunk, onTool, confirmHook(s, onConfirm), s.mcp.maxCalls);
+}
+
+// ---- quick actions -----------------------------------------------------
+
+const ACTIONS_SYSTEM =
+  "You propose the next steps a reader is most likely to want after skimming a page in their " +
+  "browser assistant. Look at what the page actually is — a receipt, a transaction alert, an " +
+  "invite, a booking, an article, a PR, a job post — and suggest what someone would genuinely do " +
+  "next with it.\n\n" +
+  "When a listed tool can do one of those things, write that action so it triggers the tool, and " +
+  "put every concrete value the tool needs into the instruction: amounts, dates, names, merchants, " +
+  "reference numbers, all read off the page. The user must never have to retype something the page " +
+  "already says. When no tool fits, suggest the most useful question about the page instead.\n\n" +
+  'Reply as JSON: {"actions":[{"label":"…","prompt":"…","tool":"…"}]}. ' +
+  "label: what goes on the button — at most four words, imperative, specific (\"Log ₹4,800 expense\", " +
+  "not \"Take action\"). prompt: the full instruction, written as if the user typed it. tool: the " +
+  "name of the tool it should use, or null for a plain question. Give two or three actions, best " +
+  "first, no duplicates. Output only the JSON.";
+
+/** Pull the actions array out of a model reply that may be fenced or chatty. */
+function parseActions(raw) {
+  let text = String(raw || "").trim();
+  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) text = fence[1].trim();
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start === -1 || end <= start) return [];
+
+  let data;
+  try {
+    data = JSON.parse(text.slice(start, end + 1));
+  } catch (_) {
+    return [];
+  }
+
+  const list = Array.isArray(data) ? data : data?.actions;
+  if (!Array.isArray(list)) return [];
+
+  return list
+    .filter((a) => a && typeof a.label === "string" && typeof a.prompt === "string")
+    .slice(0, 3)
+    .map((a) => ({
+      label: a.label.trim().slice(0, 40),
+      prompt: a.prompt.trim().slice(0, 500),
+      tool: typeof a.tool === "string" && a.tool.trim() ? a.tool.trim().slice(0, 64) : null,
+    }))
+    .filter((a) => a.label && a.prompt);
+}
+
+/**
+ * Ask the model what to offer as one-tap follow-ups for this page.
+ * Best-effort: any failure comes back as an empty list, and the UI keeps its
+ * default chips.
+ * @returns {Promise<Array<{label, prompt, tool}>>}
+ */
+export async function suggestActions(page, summary) {
+  const s = await getSettings();
+  if (!s.mcp.actions) return [];
+
+  const registry = await loadTools(s, null);
+  const catalogue = registry
+    ? registry.defs.map((d) => `- ${d.name}: ${d.description}`).join("\n")
+    : "(no tools connected)";
+
+  const context = [
+    "TOOLS AVAILABLE:",
+    catalogue,
+    "",
+    `PAGE: ${page.title} — ${page.siteName}`,
+    "",
+    "SUMMARY:",
+    (summary || "").slice(0, 2000),
+    "",
+    "PAGE CONTENT (start):",
+    (page.text || "").slice(0, 3000),
+  ].join("\n");
+
+  // Never let a suggestion attempt surface as an error — worst case the user
+  // keeps the default chips. Models that reject JSON mode land here too.
+  try {
+    const text = await dispatch({
+      system: ACTIONS_SYSTEM,
+      turns: [{ role: "user", text: context }],
+      temperature: 0.4,
+      maxTokens: 500,
+      json: true,
+    });
+    return parseActions(text);
+  } catch (e) {
+    console.warn("[TL;DR] quick actions unavailable:", e);
+    return [];
+  }
 }
 
 /** Route a neutral request to the active provider (non-streaming). */
@@ -611,12 +705,13 @@ function geminiContents(turns) {
   });
 }
 
-function geminiBody({ system, turns, temperature, maxTokens, tools, toolChoice }) {
+function geminiBody({ system, turns, temperature, maxTokens, tools, toolChoice, json }) {
   const body = {
     contents: geminiContents(turns),
     systemInstruction: { parts: [{ text: system }] },
     generationConfig: { temperature, maxOutputTokens: maxTokens },
   };
+  if (json) body.generationConfig.responseMimeType = "application/json";
   if (tools?.length) {
     body.tools = geminiTools(tools);
     // "NONE" keeps the declarations visible (earlier turns reference them)
@@ -773,8 +868,9 @@ async function groqError(resp) {
 
 /** One non-streaming Groq turn -> { text, toolCalls }. */
 async function groqTurn(apiKey, model, req) {
-  const { temperature, maxTokens, tools, toolChoice } = req;
+  const { temperature, maxTokens, tools, toolChoice, json } = req;
   const body = { model, messages: groqMessages(req), temperature, max_tokens: maxTokens };
+  if (json) body.response_format = { type: "json_object" };
   if (tools?.length) {
     body.tools = groqTools(tools);
     body.tool_choice = toolChoice === "none" ? "none" : "auto";

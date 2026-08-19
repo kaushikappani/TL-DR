@@ -348,6 +348,9 @@ main::-webkit-scrollbar { display: none; } /* Chrome/Edge/Safari */
 }
 .chip:hover { background: var(--glass-strong); }
 .chip:active { transform: scale(0.95); }
+/* Actions that will fire an MCP tool read a little louder than plain questions. */
+.chip.tool { border-color: rgba(99, 102, 241, 0.55); color: var(--text); background: var(--accent-soft); }
+.chip.tool:hover { background: rgba(99, 102, 241, 0.3); }
 
 /* Footer */
 .app-footer {

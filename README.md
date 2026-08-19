@@ -26,6 +26,7 @@ A Chrome extension that summarizes any web page or news article and lets you **a
 -  **Smart extraction** — pulls the real article body and skips nav, ads, comments, and clutter.
 -  **Model picker** — choose the model per provider (Gemini Flash/Pro, or Groq GPT-OSS/Compound), or type in any model ID the dropdown doesn't list.
 -  **MCP tools** *(Advanced)* — connect remote [MCP](https://modelcontextprotocol.io) servers and the model can call their tools while you chat about a page, asking your approval before each call.
+-  **Quick actions** — after each summary the model offers one-tap follow-ups written for that page (log the expense, add the event, break down the charges) instead of a fixed list of prompts.
 -  **Private by design** — your API key stays in your browser; page content goes only to your chosen AI provider (and any MCP server you add). No tracking, no servers.
 
 ---
@@ -81,7 +82,13 @@ docs search, your own internal API.
    ```
 4. Click **Test** — it handshakes and lists the tools it found — then **Save**.
 
-Then just ask a question in the popup or floating panel. When the model decides a tool
+After a summary the model looks at what the page actually is and offers a couple of
+one-tap follow-ups written for it — a transaction alert gets *Log ₹4,800 expense*, an
+invite gets *Add to calendar*. Chips marked 🔧 run a connected tool, and tapping one is
+the approval, so it fires straight away. The chips are written by the model each time,
+not a fixed list; turn them off under **Quick actions** in Advanced.
+
+You can also just ask in your own words. When the model decides a tool
 would help, the chat shows an approval card — which tool, why it wants it, and the exact
 arguments:
 

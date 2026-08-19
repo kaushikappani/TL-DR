@@ -212,6 +212,31 @@ function askToolPermission(bubble, req, respond) {
   run.focus();
 }
 
+// ---- quick actions ----
+
+// The chips shipped in popup.html are the fallback; once the model has read
+// the page it replaces them with follow-ups that fit what the page actually is.
+function renderQuickActions(actions) {
+  els.suggestions.textContent = "";
+  for (const action of actions) {
+    const chip = document.createElement("button");
+    chip.className = action.tool ? "chip tool" : "chip";
+    chip.textContent = action.tool ? `🔧 ${action.label}` : action.label;
+    chip.dataset.q = action.prompt;
+    if (action.tool) chip.dataset.tool = "1";
+    chip.title = action.prompt;
+    els.suggestions.append(chip);
+  }
+}
+
+async function loadQuickActions(summary) {
+  const resp = await send({ type: "SUGGEST", summary });
+  // Keep the defaults on failure, and don't stomp on a chat already underway.
+  if (!resp?.ok || !resp.actions?.length) return;
+  if (els.suggestions.classList.contains("hidden")) return;
+  renderQuickActions(resp.actions);
+}
+
 // ---- core flows ----
 
 async function init() {
@@ -305,9 +330,11 @@ async function doSummarize() {
   els.summarySection.classList.remove("hidden");
   els.chatSection.classList.remove("hidden");
   els.chatInput.focus();
+
+  loadQuickActions(resp.summary); // fills in behind the summary
 }
 
-async function ask(question) {
+async function ask(question, opts = {}) {
   if (state.busy || !question.trim()) return;
 
   els.suggestions.classList.add("hidden");
@@ -329,7 +356,7 @@ async function ask(question) {
   };
 
   const resp = await streamRequest(
-    { type: "ASK", history: state.history },
+    { type: "ASK", history: state.history, preapproved: !!opts.preapproved },
     onChunk,
     (ev) => showToolActivity(bubble, ev, acc),
     (req, respond) => askToolPermission(bubble, req, respond)
@@ -376,7 +403,8 @@ els.chatForm.addEventListener("submit", (e) => {
 
 els.suggestions.addEventListener("click", (e) => {
   const chip = e.target.closest(".chip");
-  if (chip) ask(chip.dataset.q);
+  // Tapping a tool-backed action IS the approval — no second confirmation.
+  if (chip) ask(chip.dataset.q, { preapproved: chip.dataset.tool === "1" });
 });
 
 els.copySummary.addEventListener("click", async () => {

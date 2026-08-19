@@ -164,6 +164,20 @@
         <div id="mcpList"></div>
         <button type="button" id="addServerBtn" class="ghost-btn full">＋ Add MCP server</button>
 
+        <hr class="divider" />
+        <h2 class="section-heading">Quick actions</h2>
+        <label class="switch-row">
+          <input type="checkbox" id="mcpActions" />
+          <span>Suggest follow-up actions after a summary</span>
+        </label>
+        <p class="hint">
+          After each summary the model reads what the page actually is — a receipt, an invite, a
+          booking — and offers a couple of one-tap follow-ups written for it. Ones marked 🔧 run a
+          connected tool, and tapping the chip is the approval, so they run without a second prompt.
+          Costs one small extra request per summary.
+        </p>
+
+        <hr class="divider" />
         <p class="hint warn">
           Only add servers you trust. The model chooses the arguments it sends, and those can
           include text from the page you're reading. Auth headers are stored in your browser's

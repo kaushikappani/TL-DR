@@ -9,6 +9,7 @@ import {
   answerQuestionStream,
   getActive,
   getSettings,
+  suggestActions,
 } from "./ai.js";
 import { extractPdfText } from "./pdftext.js";
 
@@ -346,7 +347,17 @@ chrome.runtime.onConnect.addListener((port) => {
             page = await extractTab(tab.id, tab.url, tab);
             await cacheSet(tab.id, tab.url, page);
           }
-          const answer = await answerQuestionStream(page, msg.history || [], onChunk, onTool, askToRunTool);
+          // A quick action the user tapped is itself the approval, so the call
+          // it was written for runs straight away — anything further still asks.
+          let preapproved = msg.preapproved ? 1 : 0;
+          const gate = (info) => {
+            if (preapproved > 0) {
+              preapproved -= 1;
+              return true;
+            }
+            return askToRunTool(info);
+          };
+          const answer = await answerQuestionStream(page, msg.history || [], onChunk, onTool, gate);
           port.postMessage({ type: "done", answer });
         } else {
           port.postMessage({ type: "error", error: "Unknown stream request." });
@@ -417,6 +428,24 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           }
           const answer = await answerQuestion(page, msg.history);
           sendResponse({ ok: true, answer });
+          break;
+        }
+        case "SUGGEST": {
+          // Model-written follow-ups for the page just summarized. Purely an
+          // enhancement — the UI keeps its default chips if this comes back empty.
+          const tab = await getActiveTab();
+          const page = (msg.page && msg.page.text) ? msg.page : await cacheGet(tab.id, tab.url);
+          if (!page) {
+            sendResponse({ ok: true, actions: [] });
+            break;
+          }
+          let actions = [];
+          try {
+            actions = await suggestActions(page, msg.summary || "");
+          } catch (e) {
+            console.warn("[TL;DR] quick actions failed:", e);
+          }
+          sendResponse({ ok: true, actions });
           break;
         }
         case "OPEN_OVERLAY": {

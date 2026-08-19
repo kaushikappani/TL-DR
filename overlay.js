@@ -60,6 +60,7 @@
           <input id="gem-input" type="text" placeholder="Ask a question…" autocomplete="off" />
           <button type="submit" class="gem-send" id="gem-send">➤</button>
         </form>
+        <div class="gem-suggestions gem-hidden" id="gem-suggestions"></div>
       </div>
       <div class="gem-footer">
         <span class="gem-credit">
@@ -93,6 +94,7 @@
     chatWrap: $("gem-chat-wrap"),
     chatlog: $("gem-chatlog"),
     chatform: $("gem-chatform"),
+    suggestions: $("gem-suggestions"),
     input: $("gem-input"),
     send: $("gem-send"),
   };
@@ -191,6 +193,30 @@
     ui.chatlog.appendChild(div);
     div.scrollIntoView({ block: "end" });
     return div;
+  }
+
+  // ---- quick actions ----
+  // Model-written follow-ups for whatever this page turned out to be. Purely
+  // additive: if the model has nothing useful, the row just stays hidden.
+  function renderQuickActions(actions) {
+    ui.suggestions.textContent = "";
+    for (const action of actions) {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = action.tool ? "gem-chip gem-chip-tool" : "gem-chip";
+      chip.textContent = action.tool ? `🔧 ${action.label}` : action.label;
+      chip.dataset.q = action.prompt;
+      if (action.tool) chip.dataset.tool = "1";
+      chip.title = action.prompt;
+      ui.suggestions.append(chip);
+    }
+    ui.suggestions.classList.toggle("gem-hidden", !actions.length);
+  }
+
+  async function loadQuickActions(summary) {
+    const reqPage = state.selectionText ? state.page : undefined;
+    const resp = await send({ type: "SUGGEST", summary, page: reqPage });
+    if (resp?.ok && resp.actions?.length) renderQuickActions(resp.actions);
   }
 
   // Approval card for one MCP tool call, drawn inside the pending answer
@@ -318,6 +344,7 @@
       ui.summaryWrap.classList.remove("gem-hidden");
       ui.chatWrap.classList.remove("gem-hidden");
       ui.input.focus();
+      loadQuickActions(resp.summary); // fills in behind the summary
     } catch (e) {
       handleError(e.message);
     } finally {
@@ -325,8 +352,9 @@
     }
   }
 
-  async function ask(question) {
+  async function ask(question, opts = {}) {
     if (state.busy || !question.trim()) return;
+    ui.suggestions.classList.add("gem-hidden");
     addMessage("user", question);
     state.history.push({ role: "user", text: question });
     ui.input.value = "";
@@ -357,7 +385,7 @@
           : `🔧 ${label} failed — answering without it…`;
       };
       const resp = await streamRequest(
-        { type: "ASK", page: reqPage, history: state.history },
+        { type: "ASK", page: reqPage, history: state.history, preapproved: !!opts.preapproved },
         onChunk,
         onTool,
         (req, respond) => askToolPermission(bubble, req, respond)
@@ -386,6 +414,12 @@
 
   // ---- events ----
   ui.summarizeBtn.addEventListener("click", doSummarize);
+  ui.suggestions.addEventListener("click", (e) => {
+    const chip = e.target.closest(".gem-chip");
+    // Tapping a tool-backed action IS the approval — no second confirmation.
+    if (chip) ask(chip.dataset.q, { preapproved: chip.dataset.tool === "1" });
+  });
+
   ui.chatform.addEventListener("submit", (e) => { e.preventDefault(); ask(ui.input.value); });
   ui.copy.addEventListener("click", async () => {
     try { await navigator.clipboard.writeText(state.rawSummary); ui.copy.textContent = "Copied!"; }
