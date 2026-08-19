@@ -8,6 +8,7 @@ import {
   summarizePageStream,
   answerQuestionStream,
   getActive,
+  getSettings,
 } from "./ai.js";
 import { extractPdfText } from "./pdftext.js";
 
@@ -289,6 +290,12 @@ chrome.runtime.onConnect.addListener((port) => {
             // port closed (panel/popup went away) — nothing to do.
           }
         };
+        // MCP tool activity, so the UI can show what the model is reaching for.
+        const onTool = (event) => {
+          try {
+            port.postMessage({ type: "tool", ...event });
+          } catch (_) {}
+        };
 
         if (msg.type === "SUMMARIZE") {
           const page = msg.page || (await extractTab(tab.id, tab.url, tab));
@@ -304,7 +311,7 @@ chrome.runtime.onConnect.addListener((port) => {
             page = await extractTab(tab.id, tab.url, tab);
             await cacheSet(tab.id, tab.url, page);
           }
-          const answer = await answerQuestionStream(page, msg.history || [], onChunk);
+          const answer = await answerQuestionStream(page, msg.history || [], onChunk, onTool);
           port.postMessage({ type: "done", answer });
         } else {
           port.postMessage({ type: "error", error: "Unknown stream request." });
@@ -331,7 +338,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       switch (msg.type) {
         case "PING_SETTINGS": {
           const { provider, apiKey, model } = await getActive();
-          sendResponse({ ok: true, hasKey: !!apiKey, provider, model });
+          const { mcp } = await getSettings();
+          const mcpServers = mcp.enabled ? mcp.servers.filter((s) => s.enabled && s.url).length : 0;
+          sendResponse({ ok: true, hasKey: !!apiKey, provider, model, mcpServers });
           break;
         }
         case "PAGE_INFO": {

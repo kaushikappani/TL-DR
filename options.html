@@ -10,119 +10,157 @@
     <div class="card">
       <h1><span class="logo">✦</span> TL;DR Settings</h1>
 
-      <label class="field-label">AI Provider</label>
-      <div class="toggle-group" id="provider" role="tablist">
-        <button type="button" class="toggle-btn" data-provider="gemini" role="tab">Google Gemini</button>
-        <button type="button" class="toggle-btn" data-provider="groq" role="tab">Groq</button>
+      <div class="toggle-group" id="tabs" role="tablist">
+        <button type="button" class="toggle-btn active" data-tab="general" role="tab">General</button>
+        <button type="button" class="toggle-btn" data-tab="advanced" role="tab">Advanced</button>
       </div>
-      <p class="hint">Pick which AI service to use. Each has its own key and models.</p>
 
-      <!-- Gemini settings -->
-      <section id="geminiPanel" class="provider-panel">
-        <label class="field-label" for="geminiKey">Gemini API Key</label>
-        <div class="key-row">
-          <input id="geminiKey" type="password" placeholder="AIza…" autocomplete="off" />
-          <button class="ghost-btn toggle-key" data-target="geminiKey" type="button" title="Show / hide">👁</button>
+      <!-- ───────────────────────── General ───────────────────────── -->
+      <div class="tab-pane active" id="generalPane">
+        <label class="field-label">AI Provider</label>
+        <div class="toggle-group" id="provider" role="tablist">
+          <button type="button" class="toggle-btn" data-provider="gemini" role="tab">Google Gemini</button>
+          <button type="button" class="toggle-btn" data-provider="groq" role="tab">Groq</button>
         </div>
+        <p class="hint">Pick which AI service to use. Each has its own key and models.</p>
+
+        <!-- Gemini settings -->
+        <section id="geminiPanel" class="provider-panel">
+          <label class="field-label" for="geminiKey">Gemini API Key</label>
+          <div class="key-row">
+            <input id="geminiKey" type="password" placeholder="AIza…" autocomplete="off" />
+            <button class="ghost-btn toggle-key" data-target="geminiKey" type="button" title="Show / hide">👁</button>
+          </div>
+          <p class="hint">
+            Get a free key from
+            <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Google AI Studio</a>.
+          </p>
+
+          <label class="field-label" for="geminiModel">Gemini Model</label>
+          <select id="geminiModel">
+            <option value="gemini-flash-latest">gemini-flash-latest (always newest Flash, recommended)</option>
+            <option value="gemini-flash-lite-latest">gemini-flash-lite-latest (fastest, cheapest)</option>
+            <option value="gemini-pro-latest">gemini-pro-latest (always newest Pro)</option>
+            <option value="gemini-3-pro-preview">gemini-3-pro-preview (most capable)</option>
+            <option value="gemini-2.5-pro">gemini-2.5-pro</option>
+            <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+            <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite</option>
+            <option value="gemini-2.0-flash">gemini-2.0-flash (legacy)</option>
+            <option value="__custom__">＋ Add a model not listed…</option>
+          </select>
+          <div class="custom-row hidden" id="geminiCustomRow">
+            <input id="geminiCustomInput" type="text" placeholder="Model ID, e.g. gemini-3-flash" autocomplete="off" spellcheck="false" />
+            <button type="button" class="ghost-btn add-model" data-target="geminiModel">Add</button>
+          </div>
+          <button type="button" class="link-btn remove-model hidden" id="geminiRemove" data-target="geminiModel">Remove this custom model</button>
+        </section>
+
+        <!-- Groq settings -->
+        <section id="groqPanel" class="provider-panel">
+          <label class="field-label" for="groqKey">Groq API Key</label>
+          <div class="key-row">
+            <input id="groqKey" type="password" placeholder="gsk_…" autocomplete="off" />
+            <button class="ghost-btn toggle-key" data-target="groqKey" type="button" title="Show / hide">👁</button>
+          </div>
+          <p class="hint">
+            Get a free key from
+            <a href="https://console.groq.com/keys" target="_blank" rel="noopener">Groq Console</a>.
+          </p>
+
+          <label class="field-label" for="groqModel">Groq Model</label>
+          <select id="groqModel">
+            <option value="openai/gpt-oss-120b">openai/gpt-oss-120b (recommended)</option>
+            <option value="openai/gpt-oss-20b">openai/gpt-oss-20b (fastest)</option>
+            <option value="qwen/qwen3.6-27b">qwen/qwen3.6-27b (preview)</option>
+            <option value="groq/compound">groq/compound (web search + code)</option>
+            <option value="groq/compound-mini">groq/compound-mini (web search + code)</option>
+            <option value="__custom__">＋ Add a model not listed…</option>
+          </select>
+          <div class="custom-row hidden" id="groqCustomRow">
+            <input id="groqCustomInput" type="text" placeholder="Model ID, e.g. moonshotai/kimi-k2" autocomplete="off" spellcheck="false" />
+            <button type="button" class="ghost-btn add-model" data-target="groqModel">Add</button>
+          </div>
+          <button type="button" class="link-btn remove-model hidden" id="groqRemove" data-target="groqModel">Remove this custom model</button>
+        </section>
+
+        <hr class="divider" />
+        <h2 class="section-heading">Personalization</h2>
+
+        <label class="field-label">Summary length</label>
+        <div class="toggle-group seg" id="prefLength" role="tablist">
+          <button type="button" class="toggle-btn" data-val="brief" role="tab">Brief</button>
+          <button type="button" class="toggle-btn" data-val="standard" role="tab">Standard</button>
+          <button type="button" class="toggle-btn" data-val="detailed" role="tab">Detailed</button>
+        </div>
+
+        <label class="field-label">Summary format</label>
+        <div class="toggle-group seg" id="prefFormat" role="tablist">
+          <button type="button" class="toggle-btn" data-val="bullets" role="tab">Bullets</button>
+          <button type="button" class="toggle-btn" data-val="paragraph" role="tab">Paragraph</button>
+          <button type="button" class="toggle-btn" data-val="eli5" role="tab">ELI5</button>
+        </div>
+
+        <label class="field-label">Reading level</label>
+        <div class="toggle-group seg" id="prefLevel" role="tablist">
+          <button type="button" class="toggle-btn" data-val="beginner" role="tab">Beginner</button>
+          <button type="button" class="toggle-btn" data-val="general" role="tab">General</button>
+          <button type="button" class="toggle-btn" data-val="expert" role="tab">Expert</button>
+        </div>
+
+        <label class="field-label" for="prefLanguage">Response language</label>
+        <select id="prefLanguage">
+          <option value="Auto">Auto (match the page)</option>
+          <option value="English">English</option>
+          <option value="Hindi">Hindi</option>
+          <option value="Spanish">Spanish</option>
+          <option value="French">French</option>
+          <option value="German">German</option>
+          <option value="Portuguese">Portuguese</option>
+          <option value="Arabic">Arabic</option>
+          <option value="Chinese (Simplified)">Chinese (Simplified)</option>
+          <option value="Japanese">Japanese</option>
+          <option value="Korean">Korean</option>
+          <option value="Russian">Russian</option>
+        </select>
+
+        <label class="field-label" for="prefTone">Tone / persona <span class="optional">(optional)</span></label>
+        <textarea
+          id="prefTone"
+          rows="2"
+          placeholder="e.g. Explain like I'm a developer. Be concise and a bit witty."
+        ></textarea>
+        <p class="hint">Free-text instructions for how the assistant should respond.</p>
+      </div>
+
+      <!-- ───────────────────────── Advanced ──────────────────────── -->
+      <div class="tab-pane" id="advancedPane">
+        <h2 class="section-heading">MCP tools</h2>
         <p class="hint">
-          Get a free key from
-          <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Google AI Studio</a>.
+          Connect
+          <a href="https://modelcontextprotocol.io" target="_blank" rel="noopener">MCP</a>
+          servers that speak the Streamable HTTP transport. Their tools are handed to the
+          model while you chat about a page, and it calls them when a question needs one.
         </p>
 
-        <label class="field-label" for="geminiModel">Gemini Model</label>
-        <select id="geminiModel">
-          <option value="gemini-flash-latest">gemini-flash-latest (always newest Flash, recommended)</option>
-          <option value="gemini-flash-lite-latest">gemini-flash-lite-latest (fastest, cheapest)</option>
-          <option value="gemini-pro-latest">gemini-pro-latest (always newest Pro)</option>
-          <option value="gemini-3-pro-preview">gemini-3-pro-preview (most capable)</option>
-          <option value="gemini-2.5-pro">gemini-2.5-pro</option>
-          <option value="gemini-2.5-flash">gemini-2.5-flash</option>
-          <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite</option>
-          <option value="gemini-2.0-flash">gemini-2.0-flash (legacy)</option>
-          <option value="__custom__">＋ Add a model not listed…</option>
-        </select>
-        <div class="custom-row hidden" id="geminiCustomRow">
-          <input id="geminiCustomInput" type="text" placeholder="Model ID, e.g. gemini-3-flash" autocomplete="off" spellcheck="false" />
-          <button type="button" class="ghost-btn add-model" data-target="geminiModel">Add</button>
-        </div>
-        <button type="button" class="link-btn remove-model hidden" id="geminiRemove" data-target="geminiModel">Remove this custom model</button>
-      </section>
+        <label class="switch-row">
+          <input type="checkbox" id="mcpEnabled" />
+          <span>Let the model use MCP tools in chat</span>
+        </label>
 
-      <!-- Groq settings -->
-      <section id="groqPanel" class="provider-panel">
-        <label class="field-label" for="groqKey">Groq API Key</label>
-        <div class="key-row">
-          <input id="groqKey" type="password" placeholder="gsk_…" autocomplete="off" />
-          <button class="ghost-btn toggle-key" data-target="groqKey" type="button" title="Show / hide">👁</button>
-        </div>
-        <p class="hint">
-          Get a free key from
-          <a href="https://console.groq.com/keys" target="_blank" rel="noopener">Groq Console</a>.
+        <label class="field-label" for="mcpMaxCalls">Max tool calls per message</label>
+        <input id="mcpMaxCalls" type="number" min="1" max="10" step="1" />
+        <p class="hint">A ceiling on the tool loop so a single question can't run away.</p>
+
+        <label class="field-label">Servers</label>
+        <div id="mcpList"></div>
+        <button type="button" id="addServerBtn" class="ghost-btn full">＋ Add MCP server</button>
+
+        <p class="hint warn">
+          Only add servers you trust. The model chooses the arguments it sends, and those can
+          include text from the page you're reading. Auth headers are stored in your browser's
+          synced extension storage, the same place as your API keys.
         </p>
-
-        <label class="field-label" for="groqModel">Groq Model</label>
-        <select id="groqModel">
-          <option value="openai/gpt-oss-120b">openai/gpt-oss-120b (recommended)</option>
-          <option value="openai/gpt-oss-20b">openai/gpt-oss-20b (fastest)</option>
-          <option value="qwen/qwen3.6-27b">qwen/qwen3.6-27b (preview)</option>
-          <option value="groq/compound">groq/compound (web search + code)</option>
-          <option value="groq/compound-mini">groq/compound-mini (web search + code)</option>
-          <option value="__custom__">＋ Add a model not listed…</option>
-        </select>
-        <div class="custom-row hidden" id="groqCustomRow">
-          <input id="groqCustomInput" type="text" placeholder="Model ID, e.g. moonshotai/kimi-k2" autocomplete="off" spellcheck="false" />
-          <button type="button" class="ghost-btn add-model" data-target="groqModel">Add</button>
-        </div>
-        <button type="button" class="link-btn remove-model hidden" id="groqRemove" data-target="groqModel">Remove this custom model</button>
-      </section>
-
-      <hr class="divider" />
-      <h2 class="section-heading">Personalization</h2>
-
-      <label class="field-label">Summary length</label>
-      <div class="toggle-group seg" id="prefLength" role="tablist">
-        <button type="button" class="toggle-btn" data-val="brief" role="tab">Brief</button>
-        <button type="button" class="toggle-btn" data-val="standard" role="tab">Standard</button>
-        <button type="button" class="toggle-btn" data-val="detailed" role="tab">Detailed</button>
       </div>
-
-      <label class="field-label">Summary format</label>
-      <div class="toggle-group seg" id="prefFormat" role="tablist">
-        <button type="button" class="toggle-btn" data-val="bullets" role="tab">Bullets</button>
-        <button type="button" class="toggle-btn" data-val="paragraph" role="tab">Paragraph</button>
-        <button type="button" class="toggle-btn" data-val="eli5" role="tab">ELI5</button>
-      </div>
-
-      <label class="field-label">Reading level</label>
-      <div class="toggle-group seg" id="prefLevel" role="tablist">
-        <button type="button" class="toggle-btn" data-val="beginner" role="tab">Beginner</button>
-        <button type="button" class="toggle-btn" data-val="general" role="tab">General</button>
-        <button type="button" class="toggle-btn" data-val="expert" role="tab">Expert</button>
-      </div>
-
-      <label class="field-label" for="prefLanguage">Response language</label>
-      <select id="prefLanguage">
-        <option value="Auto">Auto (match the page)</option>
-        <option value="English">English</option>
-        <option value="Hindi">Hindi</option>
-        <option value="Spanish">Spanish</option>
-        <option value="French">French</option>
-        <option value="German">German</option>
-        <option value="Portuguese">Portuguese</option>
-        <option value="Arabic">Arabic</option>
-        <option value="Chinese (Simplified)">Chinese (Simplified)</option>
-        <option value="Japanese">Japanese</option>
-        <option value="Korean">Korean</option>
-        <option value="Russian">Russian</option>
-      </select>
-
-      <label class="field-label" for="prefTone">Tone / persona <span class="optional">(optional)</span></label>
-      <textarea
-        id="prefTone"
-        rows="2"
-        placeholder="e.g. Explain like I'm a developer. Be concise and a bit witty."
-      ></textarea>
-      <p class="hint">Free-text instructions for how the assistant should respond.</p>
 
       <div class="row">
         <button id="testBtn" class="ghost-btn">Test connection</button>
@@ -131,6 +169,22 @@
 
       <div id="status" class="status hidden"></div>
     </div>
+
+    <template id="mcpCardTpl">
+      <div class="mcp-card">
+        <div class="mcp-row">
+          <input class="mcp-name" type="text" placeholder="Name (e.g. Weather)" autocomplete="off" />
+          <label class="mcp-switch"><input type="checkbox" class="mcp-on" /><span>On</span></label>
+        </div>
+        <input class="mcp-url" type="url" placeholder="https://example.com/mcp" autocomplete="off" spellcheck="false" />
+        <textarea class="mcp-headers" rows="2" spellcheck="false" placeholder="Optional headers, one per line — e.g. Authorization: Bearer sk-…"></textarea>
+        <div class="mcp-row end">
+          <span class="mcp-status hint"></span>
+          <button type="button" class="ghost-btn small mcp-test">Test</button>
+          <button type="button" class="link-btn mcp-remove">Remove</button>
+        </div>
+      </div>
+    </template>
 
     <script src="options.js" type="module"></script>
   </body>

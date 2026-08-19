@@ -48,8 +48,9 @@ function send(message) {
 }
 
 // Open a streaming port for a SUMMARIZE/ASK request. onChunk(text) fires for
-// each incremental piece; resolves with the final {ok, summary|answer, page}.
-function streamRequest(message, onChunk) {
+// each incremental piece, onTool(event) for MCP tool activity; resolves with
+// the final {ok, summary|answer, page}.
+function streamRequest(message, onChunk, onTool) {
   return new Promise((resolve) => {
     let port;
     try {
@@ -67,6 +68,7 @@ function streamRequest(message, onChunk) {
     };
     port.onMessage.addListener((m) => {
       if (m.type === "chunk") onChunk(m.text);
+      else if (m.type === "tool") onTool?.(m);
       else if (m.type === "done") finish({ ok: true, ...m });
       else if (m.type === "error") finish({ ok: false, error: m.error });
     });
@@ -140,6 +142,16 @@ function setBusy(busy) {
   els.chatInput.disabled = busy;
 }
 
+// While an MCP tool runs there is nothing to stream yet, so the thinking
+// bubble narrates what the model reached for.
+function showToolActivity(bubble, ev, answerSoFar) {
+  if (answerSoFar) return; // real text already arrived — don't overwrite it
+  const label = ev.tool ? `${ev.server} · ${ev.tool}` : ev.server;
+  if (ev.phase === "call") bubble.textContent = `🔧 ${label}…`;
+  else if (ev.phase === "result") bubble.textContent = `🔧 ${label} ✓`;
+  else if (ev.phase === "error") bubble.textContent = `🔧 ${label} failed — answering without it…`;
+}
+
 // ---- core flows ----
 
 async function init() {
@@ -150,7 +162,9 @@ async function init() {
     return;
   }
   const providerLabel = settings.provider === "groq" ? "Groq" : "Gemini";
-  els.modelTag.textContent = settings.model ? `${providerLabel} · ${settings.model}` : providerLabel;
+  const mcpTag = settings.mcpServers ? ` · ${settings.mcpServers} MCP` : "";
+  els.modelTag.textContent =
+    (settings.model ? `${providerLabel} · ${settings.model}` : providerLabel) + mcpTag;
   if (!settings.hasKey) {
     els.setupBanner.classList.remove("hidden");
     els.main.classList.add("hidden");
@@ -254,7 +268,9 @@ async function ask(question) {
     bubble.scrollIntoView({ block: "end" });
   };
 
-  const resp = await streamRequest({ type: "ASK", history: state.history }, onChunk);
+  const resp = await streamRequest({ type: "ASK", history: state.history }, onChunk, (ev) =>
+    showToolActivity(bubble, ev, acc)
+  );
   setBusy(false);
 
   if (!resp.ok) {

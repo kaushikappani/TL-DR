@@ -2,6 +2,13 @@
 // Provider-agnostic AI layer. Supports Google Gemini and Groq.
 // The background worker calls summarizePage() / answerQuestion(); this module
 // builds a provider-neutral message list and dispatches to the right backend.
+//
+// When MCP servers are configured (Settings -> Advanced), the Q&A path runs an
+// agentic loop instead of a single call: the model is handed the servers' tools,
+// and any tool calls it makes are executed over MCP and fed back until it
+// answers in plain text.
+
+import { listTools, callTool } from "./mcp.js";
 
 export const PROVIDERS = {
   gemini: {
@@ -62,6 +69,31 @@ function normalizeCustom(raw) {
   return { gemini: pick(raw?.gemini), groq: pick(raw?.groq) };
 }
 
+// Advanced (MCP) defaults.
+export const MCP_DEFAULTS = {
+  enabled: false,
+  maxCalls: 4,      // tool calls allowed per user message
+  servers: [],      // [{ id, name, url, headers, enabled, tools: [names] }]
+};
+
+function normalizeMcp(raw) {
+  const servers = Array.isArray(raw?.servers) ? raw.servers : [];
+  return {
+    enabled: !!raw?.enabled,
+    maxCalls: Math.min(10, Math.max(1, Number(raw?.maxCalls) || MCP_DEFAULTS.maxCalls)),
+    servers: servers
+      .filter((sv) => sv && typeof sv.url === "string")
+      .map((sv, i) => ({
+        id: String(sv.id || `mcp${i}`),
+        name: String(sv.name || "").trim() || `Server ${i + 1}`,
+        url: String(sv.url || "").trim(),
+        headers: String(sv.headers || ""),
+        enabled: sv.enabled !== false,
+        tools: Array.isArray(sv.tools) ? sv.tools.filter((t) => typeof t === "string").slice(0, 40) : [],
+      })),
+  };
+}
+
 export async function getSettings() {
   const s = await chrome.storage.sync.get([
     "provider",
@@ -71,6 +103,8 @@ export async function getSettings() {
     "groqModel",
     // model ids the user added by hand
     "customModels",
+    // advanced: MCP servers
+    "mcp",
     // legacy keys from the Gemini-only version
     "apiKey",
     "model",
@@ -95,8 +129,9 @@ export async function getSettings() {
   };
 
   const customModels = normalizeCustom(s.customModels);
+  const mcp = normalizeMcp(s.mcp);
 
-  return { provider, geminiKey, geminiModel, groqKey, groqModel, customModels, ...prefs };
+  return { provider, geminiKey, geminiModel, groqKey, groqModel, customModels, mcp, ...prefs };
 }
 
 /** The active provider's key + model. */
@@ -233,12 +268,16 @@ export async function summarizePage(page) {
 
 /**
  * Answer a question given prior chat history.
- * @param {Object} page    extracted page data (page.text holds the content)
- * @param {Array}  history [{ role: 'user'|'model', text }]
+ * @param {Object}   page    extracted page data (page.text holds the content)
+ * @param {Array}    history [{ role: 'user'|'model', text }]
+ * @param {Function} onTool  optional progress callback for MCP tool activity
  */
-export async function answerQuestion(page, history) {
-  const prefs = await getSettings();
-  return dispatch(answerRequest(page, history, prefs));
+export async function answerQuestion(page, history, onTool) {
+  const s = await getSettings();
+  const req = answerRequest(page, history, s);
+  const registry = await loadTools(s, onTool);
+  if (!registry) return dispatch(req);
+  return runWithTools(req, registry, () => {}, onTool, s.mcp.maxCalls);
 }
 
 /**
@@ -249,9 +288,14 @@ export async function summarizePageStream(page, onChunk) {
   const prefs = await getSettings();
   return dispatchStream(summaryRequest(page, prefs), onChunk);
 }
-export async function answerQuestionStream(page, history, onChunk) {
-  const prefs = await getSettings();
-  return dispatchStream(answerRequest(page, history, prefs), onChunk);
+export async function answerQuestionStream(page, history, onChunk, onTool) {
+  const s = await getSettings();
+  const req = answerRequest(page, history, s);
+  const registry = await loadTools(s, onTool);
+  // With tools in play the answer arrives after the tool round trips, so the
+  // loop emits it as a single chunk instead of token by token.
+  if (!registry) return dispatchStream(req, onChunk);
+  return runWithTools(req, registry, onChunk, onTool, s.mcp.maxCalls);
 }
 
 /** Route a neutral request to the active provider (non-streaming). */
@@ -268,6 +312,143 @@ async function dispatchStream(req, onChunk) {
   if (!apiKey) throw new Error("NO_API_KEY");
   if (provider === "groq") return callGroqStream(apiKey, model, req, onChunk);
   return callGeminiStream(apiKey, model, req, onChunk);
+}
+
+// ---- MCP tools ---------------------------------------------------------
+
+// Hard stop on model<->tool round trips, independent of the user's call budget.
+const MAX_TOOL_STEPS = 6;
+
+// Providers only accept [A-Za-z0-9_-] tool names, so MCP tools are exposed as
+// "<server>__<tool>". The registry maps that name back to the real server+tool.
+const slug = (s) => String(s).replace(/[^A-Za-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "") || "x";
+
+function qualify(taken, serverName, toolName) {
+  let name = `${slug(serverName)}__${slug(toolName)}`.slice(0, 64);
+  for (let i = 2; taken.has(name); i++) {
+    name = `${name.slice(0, 60)}_${i}`;
+  }
+  return name;
+}
+
+/**
+ * Ask every enabled MCP server what it can do and build a flat tool registry.
+ * Returns null when MCP is off or nothing usable came back, so callers can fall
+ * back to the plain (streaming) path.
+ */
+async function loadTools(settings, onTool) {
+  const mcp = settings.mcp;
+  if (!mcp?.enabled) return null;
+  const servers = mcp.servers.filter((sv) => sv.enabled && sv.url);
+  if (!servers.length) return null;
+
+  const defs = [];
+  const byName = new Map();
+
+  const lists = await Promise.all(
+    servers.map(async (server) => {
+      try {
+        return { server, tools: await listTools(server) };
+      } catch (e) {
+        console.warn("[TL;DR] MCP list failed:", server.name, e);
+        onTool?.({ phase: "error", server: server.name, message: e.message || "unreachable" });
+        return { server, tools: [] };
+      }
+    })
+  );
+
+  for (const { server, tools } of lists) {
+    for (const tool of tools) {
+      const name = qualify(byName, server.name, tool.name);
+      defs.push({
+        name,
+        description: `[${server.name}] ${tool.description || tool.name}`.slice(0, 1024),
+        schema: tool.inputSchema,
+      });
+      byName.set(name, { server, tool: tool.name });
+    }
+  }
+
+  return defs.length ? { defs, byName } : null;
+}
+
+/**
+ * The agentic loop: call the model with tools attached, run whatever it asks
+ * for over MCP, feed the results back, repeat until it answers in text.
+ */
+async function runWithTools(req, registry, onChunk, onTool, maxCalls) {
+  const { provider, apiKey, model } = await getActive();
+  if (!apiKey) throw new Error("NO_API_KEY");
+
+  const turns = [...req.turns];
+  let used = 0;
+
+  for (let step = 0; step < MAX_TOOL_STEPS; step++) {
+    // Once the budget is spent, keep the declarations (history already refers
+    // to them) but forbid further calls, which forces a final answer.
+    const turnReq = { ...req, turns, tools: registry.defs, toolChoice: used < maxCalls ? "auto" : "none" };
+    const { text, toolCalls } =
+      provider === "groq"
+        ? await groqTurn(apiKey, model, turnReq)
+        : await geminiTurn(apiKey, model, turnReq);
+
+    if (!toolCalls.length) {
+      const answer = (text || "").trim();
+      if (!answer) throw new Error("The model returned no answer.");
+      onChunk(answer);
+      return answer;
+    }
+
+    turns.push({ role: "tool_call", calls: toolCalls });
+    const results = [];
+    for (const call of toolCalls) {
+      results.push(await execTool(registry, call, ++used > maxCalls, onTool));
+    }
+    turns.push({ role: "tool_result", results });
+  }
+
+  // Safety net: too many rounds — answer with what we have, calls forbidden.
+  const lastReq = { ...req, turns, tools: registry.defs, toolChoice: "none" };
+  const { text } = await (provider === "groq"
+    ? groqTurn(apiKey, model, lastReq)
+    : geminiTurn(apiKey, model, lastReq));
+  const answer = (text || "").trim() || "I couldn't finish using the tools for this one.";
+  onChunk(answer);
+  return answer;
+}
+
+/** Run a single tool call, turning any failure into text the model can read. */
+async function execTool(registry, call, overBudget, onTool) {
+  const entry = registry.byName.get(call.name);
+  const base = { id: call.id, name: call.name };
+
+  if (!entry) return { ...base, text: `Error: no tool named "${call.name}" is available.`, isError: true };
+  if (overBudget) {
+    return { ...base, text: "Error: tool call budget for this message is used up. Answer with what you have.", isError: true };
+  }
+
+  onTool?.({ phase: "call", server: entry.server.name, tool: entry.tool, args: call.args });
+  try {
+    const { text, isError } = await callTool(entry.server, entry.tool, call.args);
+    onTool?.({ phase: "result", server: entry.server.name, tool: entry.tool, isError });
+    return { ...base, text, isError };
+  } catch (e) {
+    const message = e?.message || "tool call failed";
+    console.warn("[TL;DR] MCP call failed:", call.name, e);
+    onTool?.({ phase: "error", server: entry.server.name, tool: entry.tool, message });
+    return { ...base, text: `Error calling ${entry.tool}: ${message}`, isError: true };
+  }
+}
+
+function safeArgs(raw) {
+  if (raw && typeof raw === "object") return raw;
+  if (typeof raw !== "string" || !raw.trim()) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch (_) {
+    return {};
+  }
 }
 
 // ---- SSE helper --------------------------------------------------------
@@ -297,15 +478,89 @@ async function readSSE(resp, onLine) {
 
 // ---- Gemini backend ----------------------------------------------------
 
-function geminiBody({ system, turns, temperature, maxTokens }) {
-  return {
-    contents: turns.map((t) => ({
-      role: t.role === "model" ? "model" : "user",
-      parts: [{ text: t.text }],
-    })),
+// Gemini takes an OpenAPI-flavoured subset of JSON Schema with UPPERCASE type
+// names and rejects anything it doesn't recognise, so MCP schemas get copied
+// across field by field rather than passed through.
+const GEMINI_TYPES = {
+  string: "STRING",
+  number: "NUMBER",
+  integer: "INTEGER",
+  boolean: "BOOLEAN",
+  array: "ARRAY",
+  object: "OBJECT",
+};
+
+function geminiSchema(node) {
+  if (!node || typeof node !== "object") return null;
+  const raw = Array.isArray(node.type) ? node.type.find((t) => t !== "null") : node.type;
+  const type = GEMINI_TYPES[String(raw || "").toLowerCase()];
+  if (!type) return null;
+
+  const out = { type };
+  if (node.description) out.description = String(node.description).slice(0, 500);
+  if (Array.isArray(node.enum) && node.enum.length) out.enum = node.enum.map(String);
+  if (type === "ARRAY") out.items = geminiSchema(node.items) || { type: "STRING" };
+  if (type === "OBJECT") {
+    const properties = {};
+    for (const [key, value] of Object.entries(node.properties || {})) {
+      const child = geminiSchema(value);
+      if (child) properties[key] = child;
+    }
+    // An OBJECT with no properties is rejected; treat it as "no parameters".
+    if (!Object.keys(properties).length) return null;
+    out.properties = properties;
+    const required = (Array.isArray(node.required) ? node.required : []).filter((r) => properties[r]);
+    if (required.length) out.required = required;
+  }
+  return out;
+}
+
+function geminiTools(tools) {
+  return [
+    {
+      functionDeclarations: tools.map((t) => {
+        const parameters = geminiSchema(t.schema);
+        const decl = { name: t.name, description: t.description };
+        if (parameters) decl.parameters = parameters;
+        return decl;
+      }),
+    },
+  ];
+}
+
+function geminiContents(turns) {
+  return turns.map((t) => {
+    if (t.role === "tool_call") {
+      return {
+        role: "model",
+        parts: t.calls.map((c) => ({ functionCall: { name: c.name, args: c.args || {} } })),
+      };
+    }
+    if (t.role === "tool_result") {
+      return {
+        role: "user",
+        parts: t.results.map((r) => ({
+          functionResponse: { name: r.name, response: { result: r.text } },
+        })),
+      };
+    }
+    return { role: t.role === "model" ? "model" : "user", parts: [{ text: t.text }] };
+  });
+}
+
+function geminiBody({ system, turns, temperature, maxTokens, tools, toolChoice }) {
+  const body = {
+    contents: geminiContents(turns),
     systemInstruction: { parts: [{ text: system }] },
     generationConfig: { temperature, maxOutputTokens: maxTokens },
   };
+  if (tools?.length) {
+    body.tools = geminiTools(tools);
+    // "NONE" keeps the declarations visible (earlier turns reference them)
+    // while telling the model to stop calling and answer.
+    body.toolConfig = { functionCallingConfig: { mode: toolChoice === "none" ? "NONE" : "AUTO" } };
+  }
+  return body;
 }
 
 async function geminiError(resp) {
@@ -318,7 +573,8 @@ async function geminiError(resp) {
   return new Error(`Gemini API error (${resp.status}): ${detail || resp.statusText}`);
 }
 
-async function callGemini(apiKey, model, req) {
+/** One non-streaming Gemini turn -> { text, toolCalls }. */
+async function geminiTurn(apiKey, model, req) {
   const url = `${GEMINI_BASE}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
   let resp;
@@ -340,7 +596,22 @@ async function callGemini(apiKey, model, req) {
     const reason = data?.promptFeedback?.blockReason;
     throw new Error(reason ? `Response blocked: ${reason}` : "Empty response from Gemini.");
   }
-  const text = (candidate?.content?.parts || []).map((p) => p.text || "").join("").trim();
+
+  const parts = candidate?.content?.parts || [];
+  const text = parts.map((p) => p.text || "").join("").trim();
+  const toolCalls = parts
+    .filter((p) => p.functionCall?.name)
+    .map((p, i) => ({
+      id: `${p.functionCall.name}_${i}`,
+      name: p.functionCall.name,
+      args: safeArgs(p.functionCall.args),
+    }));
+
+  return { text, toolCalls };
+}
+
+async function callGemini(apiKey, model, req) {
+  const { text } = await geminiTurn(apiKey, model, req);
   if (!text) throw new Error("Gemini returned no text.");
   return text;
 }
@@ -390,13 +661,41 @@ async function callGeminiStream(apiKey, model, req, onChunk) {
 // ---- Groq backend (OpenAI-compatible chat completions) -----------------
 
 function groqMessages({ system, turns }) {
-  return [
-    { role: "system", content: system },
-    ...turns.map((t) => ({
-      role: t.role === "model" ? "assistant" : "user",
-      content: t.text,
-    })),
-  ];
+  const messages = [{ role: "system", content: system }];
+  for (const t of turns) {
+    if (t.role === "tool_call") {
+      messages.push({
+        role: "assistant",
+        content: null,
+        tool_calls: t.calls.map((c) => ({
+          id: c.id,
+          type: "function",
+          function: { name: c.name, arguments: JSON.stringify(c.args || {}) },
+        })),
+      });
+    } else if (t.role === "tool_result") {
+      for (const r of t.results) {
+        messages.push({ role: "tool", tool_call_id: r.id, name: r.name, content: r.text });
+      }
+    } else {
+      messages.push({ role: t.role === "model" ? "assistant" : "user", content: t.text });
+    }
+  }
+  return messages;
+}
+
+// OpenAI-compatible function schemas. MCP input schemas are already JSON
+// Schema, so only the envelope needs normalising.
+function groqTools(tools) {
+  return tools.map((t) => {
+    const schema = t.schema && typeof t.schema === "object" ? t.schema : {};
+    const parameters = {
+      type: "object",
+      properties: schema.properties && typeof schema.properties === "object" ? schema.properties : {},
+    };
+    if (Array.isArray(schema.required) && schema.required.length) parameters.required = schema.required;
+    return { type: "function", function: { name: t.name, description: t.description, parameters } };
+  });
 }
 
 async function groqError(resp) {
@@ -409,8 +708,15 @@ async function groqError(resp) {
   return new Error(`Groq API error (${resp.status}): ${detail || resp.statusText}`);
 }
 
-async function callGroq(apiKey, model, req) {
-  const { temperature, maxTokens } = req;
+/** One non-streaming Groq turn -> { text, toolCalls }. */
+async function groqTurn(apiKey, model, req) {
+  const { temperature, maxTokens, tools, toolChoice } = req;
+  const body = { model, messages: groqMessages(req), temperature, max_tokens: maxTokens };
+  if (tools?.length) {
+    body.tools = groqTools(tools);
+    body.tool_choice = toolChoice === "none" ? "none" : "auto";
+  }
+
   let resp;
   try {
     resp = await fetch(GROQ_URL, {
@@ -419,7 +725,7 @@ async function callGroq(apiKey, model, req) {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({ model, messages: groqMessages(req), temperature, max_tokens: maxTokens }),
+      body: JSON.stringify(body),
     });
   } catch (e) {
     throw new Error("Network error reaching Groq. Check your connection.");
@@ -427,8 +733,20 @@ async function callGroq(apiKey, model, req) {
 
   if (!resp.ok) throw await groqError(resp);
 
-  const data = await resp.json();
-  const text = data?.choices?.[0]?.message?.content?.trim();
+  const message = (await resp.json())?.choices?.[0]?.message;
+  const toolCalls = (message?.tool_calls || [])
+    .filter((c) => c?.function?.name)
+    .map((c, i) => ({
+      id: c.id || `call_${i}`,
+      name: c.function.name,
+      args: safeArgs(c.function.arguments),
+    }));
+
+  return { text: (message?.content || "").trim(), toolCalls };
+}
+
+async function callGroq(apiKey, model, req) {
+  const { text } = await groqTurn(apiKey, model, req);
   if (!text) throw new Error("Groq returned no text.");
   return text;
 }

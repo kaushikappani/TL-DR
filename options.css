@@ -169,6 +169,48 @@ input:focus, select:focus, textarea:focus {
   color: var(--accent-hover);
 }
 .link-btn:hover { text-decoration: underline; }
+
+/* Tabs (General / Advanced) */
+.tab-pane { display: none; }
+.tab-pane.active { display: block; }
+
+/* Advanced: MCP servers */
+.switch-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.switch-row input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--accent); margin: 0; }
+.hint.warn { color: #fbbf24; }
+.ghost-btn.full { width: 100%; margin-top: 10px; }
+.ghost-btn.small { padding: 8px 14px; font-size: 13px; }
+.mcp-card {
+  background: var(--glass-2);
+  border: 1px solid var(--glass-border);
+  border-radius: 18px;
+  padding: 14px;
+  margin-bottom: 10px;
+}
+.mcp-card + .mcp-card { margin-top: 0; }
+.mcp-card input, .mcp-card textarea { margin-bottom: 8px; font-size: 13px; }
+.mcp-row { display: flex; align-items: center; gap: 8px; }
+.mcp-row.end { justify-content: flex-end; margin-top: 2px; }
+.mcp-row .mcp-name { flex: 1; margin-bottom: 0; }
+.mcp-row.end .mcp-status { flex: 1; margin: 0; text-align: left; }
+.mcp-switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.mcp-switch input { width: 16px; height: 16px; accent-color: var(--accent); margin: 0; }
+.mcp-status.ok { color: var(--ok); }
+.mcp-status.error { color: var(--danger); }
 .hint { font-size: 12px; color: var(--text-dim); margin: 8px 0 0; }
 .hint a { color: var(--accent-hover); font-weight: 600; text-decoration: none; }
 .hint a:hover { text-decoration: underline; }

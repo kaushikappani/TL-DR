@@ -1,5 +1,6 @@
 // options.js
-import { PROVIDERS, getSettings } from "./ai.js";
+import { PROVIDERS, MCP_DEFAULTS, getSettings } from "./ai.js";
+import { probe } from "./mcp.js";
 
 const els = {
   providerGroup: document.getElementById("provider"),
@@ -16,6 +17,14 @@ const els = {
   prefLevel: document.getElementById("prefLevel"),
   prefLanguage: document.getElementById("prefLanguage"),
   prefTone: document.getElementById("prefTone"),
+  // advanced / MCP
+  tabs: document.getElementById("tabs"),
+  panes: { general: document.getElementById("generalPane"), advanced: document.getElementById("advancedPane") },
+  mcpEnabled: document.getElementById("mcpEnabled"),
+  mcpMaxCalls: document.getElementById("mcpMaxCalls"),
+  mcpList: document.getElementById("mcpList"),
+  addServerBtn: document.getElementById("addServerBtn"),
+  mcpCardTpl: document.getElementById("mcpCardTpl"),
   saveBtn: document.getElementById("saveBtn"),
   testBtn: document.getElementById("testBtn"),
   status: document.getElementById("status"),
@@ -92,6 +101,105 @@ function removeCustomModel(sel) {
   status(`Removed ${id}. Don't forget to Save.`, "ok");
 }
 
+// ---- Advanced tab: MCP servers -----------------------------------------
+
+function showTab(name) {
+  for (const [key, pane] of Object.entries(els.panes)) pane.classList.toggle("active", key === name);
+  els.tabs.querySelectorAll(".toggle-btn").forEach((b) => {
+    const active = b.dataset.tab === name;
+    b.classList.toggle("active", active);
+    b.setAttribute("aria-selected", active ? "true" : "false");
+  });
+}
+
+let serverSeq = 1;
+
+function cardStatus(card, text, kind = "") {
+  const el = card.querySelector(".mcp-status");
+  el.className = `mcp-status hint ${kind}`;
+  el.textContent = text;
+}
+
+/** Read one card back into a server object. */
+function readCard(card) {
+  let tools = [];
+  try {
+    tools = JSON.parse(card.dataset.tools || "[]");
+  } catch (_) {}
+  return {
+    id: card.dataset.id,
+    name: card.querySelector(".mcp-name").value.trim(),
+    url: card.querySelector(".mcp-url").value.trim(),
+    headers: card.querySelector(".mcp-headers").value,
+    enabled: card.querySelector(".mcp-on").checked,
+    tools,
+  };
+}
+
+function addServerCard(server) {
+  const card = els.mcpCardTpl.content.firstElementChild.cloneNode(true);
+  card.dataset.id = server.id || `mcp_${serverSeq++}`;
+  card.dataset.tools = JSON.stringify(server.tools || []);
+  card.querySelector(".mcp-name").value = server.name || "";
+  card.querySelector(".mcp-url").value = server.url || "";
+  card.querySelector(".mcp-headers").value = server.headers || "";
+  card.querySelector(".mcp-on").checked = server.enabled !== false;
+
+  const known = server.tools || [];
+  if (known.length) cardStatus(card, `${known.length} tool${known.length === 1 ? "" : "s"}: ${known.join(", ")}`);
+
+  card.querySelector(".mcp-remove").addEventListener("click", () => card.remove());
+  card.querySelector(".mcp-test").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    // Probe what's typed in right now, not what was last saved.
+    const typed = readCard(card);
+    if (!typed.url) {
+      cardStatus(card, "Enter the server URL first.", "error");
+      return;
+    }
+    btn.disabled = true;
+    cardStatus(card, "Connecting…");
+    try {
+      const tools = await probe(typed);
+      card.dataset.tools = JSON.stringify(tools.slice(0, 40));
+      cardStatus(
+        card,
+        tools.length ? `✓ ${tools.length} tool${tools.length === 1 ? "" : "s"}: ${tools.join(", ")}` : "Connected, but this server exposes no tools.",
+        tools.length ? "ok" : "error"
+      );
+    } catch (err) {
+      card.dataset.tools = "[]";
+      cardStatus(card, `✗ ${err.message}`, "error");
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  els.mcpList.appendChild(card);
+  return card;
+}
+
+function renderServers(servers) {
+  els.mcpList.innerHTML = "";
+  servers.forEach(addServerCard);
+}
+
+/** All configured servers, dropping rows the user left blank. */
+function collectServers() {
+  return [...els.mcpList.querySelectorAll(".mcp-card")]
+    .map(readCard)
+    .filter((sv) => sv.url || sv.name)
+    .map((sv, i) => ({ ...sv, name: sv.name || `Server ${i + 1}` }));
+}
+
+function readMcp() {
+  return {
+    enabled: els.mcpEnabled.checked,
+    maxCalls: Math.min(10, Math.max(1, Number(els.mcpMaxCalls.value) || MCP_DEFAULTS.maxCalls)),
+    servers: collectServers(),
+  };
+}
+
 // A segmented control whose buttons carry data-val; tracks one selected value.
 function initSegment(group) {
   group.addEventListener("click", (e) => {
@@ -146,6 +254,11 @@ async function load() {
   }
   setProvider(s.provider);
 
+  // advanced / MCP
+  els.mcpEnabled.checked = s.mcp.enabled;
+  els.mcpMaxCalls.value = s.mcp.maxCalls;
+  renderServers(s.mcp.servers);
+
   // personalization
   setSegment(els.prefLength, s.prefLength);
   setSegment(els.prefFormat, s.prefFormat);
@@ -182,6 +295,16 @@ document.querySelectorAll(".custom-row input").forEach((input) => {
   });
 });
 
+// Tabs.
+els.tabs.addEventListener("click", (e) => {
+  const btn = e.target.closest(".toggle-btn");
+  if (btn) showTab(btn.dataset.tab);
+});
+els.addServerBtn.addEventListener("click", () => {
+  const card = addServerCard({ enabled: true });
+  card.querySelector(".mcp-name").focus();
+});
+
 // Show/hide key buttons.
 document.querySelectorAll(".toggle-key").forEach((btn) => {
   btn.addEventListener("click", () => {
@@ -201,20 +324,27 @@ els.saveBtn.addEventListener("click", async () => {
   const sel = modelSelect(provider);
   if (sel.value === CUSTOM && !addCustomModel(sel)) return;
 
-  await chrome.storage.sync.set({
-    provider,
-    geminiKey: els.geminiKey.value.trim(),
-    geminiModel: chosenModel(els.geminiModel) || PROVIDERS.gemini.defaultModel,
-    groqKey: els.groqKey.value.trim(),
-    groqModel: chosenModel(els.groqModel) || PROVIDERS.groq.defaultModel,
-    customModels,
-    // personalization
-    prefLength: getSegment(els.prefLength) || "standard",
-    prefFormat: getSegment(els.prefFormat) || "bullets",
-    prefLevel: getSegment(els.prefLevel) || "general",
-    prefLanguage: els.prefLanguage.value,
-    prefTone: els.prefTone.value.trim().slice(0, 300),
-  });
+  try {
+    await chrome.storage.sync.set({
+      provider,
+      geminiKey: els.geminiKey.value.trim(),
+      geminiModel: chosenModel(els.geminiModel) || PROVIDERS.gemini.defaultModel,
+      groqKey: els.groqKey.value.trim(),
+      groqModel: chosenModel(els.groqModel) || PROVIDERS.groq.defaultModel,
+      customModels,
+      mcp: readMcp(),
+      // personalization
+      prefLength: getSegment(els.prefLength) || "standard",
+      prefFormat: getSegment(els.prefFormat) || "bullets",
+      prefLevel: getSegment(els.prefLevel) || "general",
+      prefLanguage: els.prefLanguage.value,
+      prefTone: els.prefTone.value.trim().slice(0, 300),
+    });
+  } catch (e) {
+    // Synced storage caps each key at 8 KB — long header blocks can hit it.
+    status(`Couldn't save: ${e.message}`, "error");
+    return;
+  }
   status("Saved! You can close this tab.", "ok");
 });
 

@@ -25,7 +25,8 @@ A Chrome extension that summarizes any web page or news article and lets you **a
 -  **Floating panel** — a draggable, minimizable panel that lives on the page, so you never lose your place when you click away.
 -  **Smart extraction** — pulls the real article body and skips nav, ads, comments, and clutter.
 -  **Model picker** — choose the model per provider (Gemini Flash/Pro, or Groq GPT-OSS/Compound), or type in any model ID the dropdown doesn't list.
--  **Private by design** — your API key stays in your browser; page content goes only to your chosen AI provider. No tracking, no servers.
+-  **MCP tools** *(Advanced)* — connect remote [MCP](https://modelcontextprotocol.io) servers and the model can call their tools while you chat about a page.
+-  **Private by design** — your API key stays in your browser; page content goes only to your chosen AI provider (and any MCP server you add). No tracking, no servers.
 
 ---
 
@@ -63,6 +64,39 @@ The extension isn't on the Chrome Web Store yet — load it manually in a minute
 
 To summarize PDFs opened from your computer (`file://…`), turn on **Allow access to file URLs**
 for this extension in `chrome://extensions` → **Details**. Web PDFs (`http(s)://…`) work without it.
+
+---
+
+##  MCP tools (Advanced)
+
+Settings → **Advanced** connects the extension to [MCP](https://modelcontextprotocol.io) servers,
+so the model can pull in live data while answering questions about a page — a ticket tracker, a
+docs search, your own internal API.
+
+1. Open **Settings → Advanced** and tick **Let the model use MCP tools in chat**.
+2. **＋ Add MCP server**, then fill in a name and the server URL (e.g. `https://example.com/mcp`).
+3. Add auth headers if the server needs them, one per line:
+   ```
+   Authorization: Bearer sk-…
+   ```
+4. Click **Test** — it handshakes and lists the tools it found — then **Save**.
+
+Then just ask a question in the popup or floating panel. When the model decides a tool
+would help, the chat bubble shows what it is calling (🔧 *Server · tool*), the result is fed
+back in, and it answers with the tool output in hand.
+
+**Good to know**
+
+- Only the **Streamable HTTP** transport is supported (the current remote-MCP standard).
+  Local `stdio` servers aren't reachable from a browser extension; the older HTTP+SSE
+  transport isn't implemented.
+- Tools are offered on the **Q&A path only** — the one-click summary is a pure
+  read-the-page task and stays a single, fast call.
+- **Max tool calls per message** caps the loop so one question can't run away.
+- With tools enabled the answer arrives in one piece instead of streaming token by
+  token, because the model needs the tool results before it can write it.
+- Only add servers you trust: the model chooses the arguments it sends, and those can
+  include text from the page you're reading.
 
 ---
 
@@ -105,12 +139,14 @@ for this extension in `chrome://extensions` → **Details**. Web PDFs (`http(s):
 | File | Role |
 |------|------|
 | `manifest.json` | Extension config (Manifest V3) |
-| `background.js` | Service worker — extraction, Gemini calls, context menus, overlay injection |
-| `gemini.js` | Gemini REST API wrapper (summarize / ask) |
+| `background.js` | Service worker — extraction, provider calls, context menus, overlay injection |
+| `ai.js` | Provider-agnostic AI layer (Gemini + Groq, prompts, MCP tool loop) |
+| `mcp.js` | MCP client — JSON-RPC over the Streamable HTTP transport |
+| `pdftext.js` | Local PDF text extraction via pdf.js |
 | `content.js` | Readability-style page content extractor |
 | `popup.html` · `popup.css` · `popup.js` | Toolbar popup UI |
 | `overlay.css` · `overlay.js` | In-page floating panel (markup built in JS) |
-| `options.html` · `options.css` · `options.js` | Settings page (API key + model) |
+| `options.html` · `options.css` · `options.js` | Settings page (General: keys/models/personalization · Advanced: MCP) |
 | `icons/` | 16 / 48 / 128 px icons |
 
 ---
@@ -126,7 +162,8 @@ for this extension in `chrome://extensions` → **Details**. Web PDFs (`http(s):
 ##  Privacy
 
 - Your API key is stored only in your browser via `chrome.storage.sync` (synced to your Google account, never sent to any third party).
-- Page content is sent **only** to Google's Gemini API to generate summaries and answers.
+- Page content is sent **only** to the AI provider you picked, to generate summaries and answers.
+- If you configure MCP servers, tool arguments the model writes — which can quote the page — are sent to those servers too. Add only servers you trust.
 - There is no analytics, telemetry, or backend server of any kind.
 
 ---

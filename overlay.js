@@ -108,8 +108,8 @@
     });
   }
 
-  // Streaming port: post one request, receive {chunk}* then {done}|{error}.
-  function streamRequest(message, onChunk) {
+  // Streaming port: post one request, receive {chunk|tool}* then {done}|{error}.
+  function streamRequest(message, onChunk, onTool) {
     return new Promise((resolve) => {
       let port;
       try {
@@ -127,6 +127,7 @@
       };
       port.onMessage.addListener((m) => {
         if (m.type === "chunk") onChunk(m.text);
+        else if (m.type === "tool") onTool?.(m);
         else if (m.type === "done") finish({ ok: true, ...m });
         else if (m.type === "error") finish({ ok: false, error: m.error });
       });
@@ -287,7 +288,20 @@
         bubble.innerHTML = renderMarkdown(acc);
         bubble.scrollIntoView({ block: "end" });
       };
-      const resp = await streamRequest({ type: "ASK", page: reqPage, history: state.history }, onChunk);
+      // While an MCP tool runs there is nothing to stream, so narrate it.
+      const onTool = (ev) => {
+        if (acc) return;
+        const label = ev.tool ? `${ev.server} · ${ev.tool}` : ev.server;
+        bubble.textContent =
+          ev.phase === "call" ? `🔧 ${label}…`
+          : ev.phase === "result" ? `🔧 ${label} ✓`
+          : `🔧 ${label} failed — answering without it…`;
+      };
+      const resp = await streamRequest(
+        { type: "ASK", page: reqPage, history: state.history },
+        onChunk,
+        onTool
+      );
       if (!resp.ok) throw new Error(resp.error);
       bubble.classList.remove("gem-thinking");
       bubble.innerHTML = renderMarkdown(resp.answer);
