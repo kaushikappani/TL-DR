@@ -178,6 +178,19 @@
         </p>
 
         <hr class="divider" />
+        <h2 class="section-heading">Memory</h2>
+        <label class="switch-row">
+          <input type="checkbox" id="mcpMemory" />
+          <span>Let the model remember things between conversations</span>
+        </label>
+        <p class="hint">
+          When a tool hands the model something it will need again — a login token, an account id,
+          a preference you stated — it can keep it, so you aren't asked to sign in every time.
+          Stored on this device only, never synced. Everything it kept is listed here.
+        </p>
+        <div id="memoryList"></div>
+
+        <hr class="divider" />
         <p class="hint warn">
           Only add servers you trust. The model chooses the arguments it sends, and those can
           include text from the page you're reading. Auth headers are stored in your browser's

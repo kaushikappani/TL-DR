@@ -9,6 +9,7 @@
 // answers in plain text.
 
 import { listTools, callTool } from "./mcp.js";
+import { listMemories, saveMemory, forgetMemory, memoryBlock } from "./memory.js";
 
 export const PROVIDERS = {
   gemini: {
@@ -74,6 +75,7 @@ export const MCP_DEFAULTS = {
   enabled: false,
   confirm: true,    // ask the user before each tool call
   actions: true,    // offer model-written quick actions after a summary
+  memory: true,     // let the model keep durable notes between conversations
   maxCalls: 4,      // tool calls allowed per user message
   servers: [],      // [{ id, name, url, headers, enabled, tools: [names] }]
 };
@@ -84,6 +86,7 @@ function normalizeMcp(raw) {
     enabled: !!raw?.enabled,
     confirm: raw?.confirm !== false,
     actions: raw?.actions !== false,
+    memory: raw?.memory !== false,
     maxCalls: Math.min(10, Math.max(1, Number(raw?.maxCalls) || MCP_DEFAULTS.maxCalls)),
     servers: servers
       .filter((sv) => sv && typeof sv.url === "string")
@@ -178,6 +181,11 @@ function toolsDirective() {
     "you assumed. Today's date is " + today + ". Ask the user only when a required argument genuinely " +
     "cannot be inferred and guessing it would be wrong — and then ask for that one thing, not for " +
     "everything.\n\n" +
+    "You have a memory that outlives this conversation. When a tool hands you something that will be " +
+    "needed again — an auth token, a session or account id, a workspace name, a preference the user " +
+    "states — save it with memory_save so the user isn't asked to log in or repeat themselves next " +
+    "time. Give tokens an expiry in days if you know one. If a saved value stops working, memory_forget " +
+    "it and get a fresh one. Don't save one-off details or anything the user asked you not to keep.\n\n" +
     "Don't ask permission in prose and don't read the arguments back for approval. Before anything runs, " +
     "the user sees a card with the tool name and the exact arguments and can decline it there. Just say " +
     "in one short line which tool you're using and why, then make the call. If a call is declined, answer " +
@@ -272,7 +280,7 @@ function summaryRequest(page, prefs) {
   };
 }
 
-function answerRequest(page, history, prefs) {
+function answerRequest(page, history, prefs, memories = "") {
   const turns = [
     {
       role: "user",
@@ -284,7 +292,7 @@ function answerRequest(page, history, prefs) {
     { role: "model", text: "Got it. I've read the page and will answer questions about it, drawing on general knowledge where the page falls short." },
     ...history.map((m) => ({ role: m.role, text: m.text })),
   ];
-  return { system: QA_SYSTEM + prefsDirective(prefs), turns, temperature: 0.3, maxTokens: 1024 };
+  return { system: QA_SYSTEM + prefsDirective(prefs) + memories, turns, temperature: 0.3, maxTokens: 1024 };
 }
 
 // ---- public API --------------------------------------------------------
@@ -303,7 +311,7 @@ export async function summarizePage(page) {
  */
 export async function answerQuestion(page, history, onTool, onConfirm) {
   const s = await getSettings();
-  const req = answerRequest(page, history, s);
+  const req = answerRequest(page, history, s, await recalled(s));
   const registry = await loadTools(s, onTool);
   if (!registry) return dispatch(req);
   return runWithTools(req, registry, () => {}, onTool, confirmHook(s, onConfirm), s.mcp.maxCalls);
@@ -319,7 +327,7 @@ export async function summarizePageStream(page, onChunk) {
 }
 export async function answerQuestionStream(page, history, onChunk, onTool, onConfirm) {
   const s = await getSettings();
-  const req = answerRequest(page, history, s);
+  const req = answerRequest(page, history, s, await recalled(s));
   const registry = await loadTools(s, onTool);
   // With tools in play the answer arrives after the tool round trips, so the
   // loop emits it as a single chunk instead of token by token.
@@ -452,6 +460,49 @@ function qualify(taken, serverName, toolName) {
   return name;
 }
 
+/** What the model has saved before, rendered for the system prompt. */
+async function recalled(settings) {
+  if (!settings.mcp?.memory) return "";
+  try {
+    return memoryBlock(await listMemories());
+  } catch (e) {
+    console.warn("[TL;DR] memory unavailable:", e);
+    return "";
+  }
+}
+
+// Tools the extension implements itself. They run locally against
+// chrome.storage, so they skip the approval card the MCP calls go through —
+// nothing leaves the browser, and everything saved is listed (and deletable)
+// in Settings.
+const MEMORY_TOOLS = [
+  {
+    name: "memory_save",
+    description:
+      "Remember something for future conversations — an auth token, an account or session id, a " +
+      "workspace, a stated preference. Re-using a key overwrites what was there, which is how you " +
+      "refresh a token.",
+    schema: {
+      type: "object",
+      properties: {
+        key: { type: "string", description: 'Short stable name, e.g. "noteit_token".' },
+        value: { type: "string", description: "What to remember." },
+        expires_in_days: { type: "number", description: "Optional lifetime in days for things that go stale." },
+      },
+      required: ["key", "value"],
+    },
+  },
+  {
+    name: "memory_forget",
+    description: "Delete something you saved earlier, by its key. Use it when a value stops working.",
+    schema: {
+      type: "object",
+      properties: { key: { type: "string", description: "The key to forget." } },
+      required: ["key"],
+    },
+  },
+];
+
 /**
  * Ask every enabled MCP server what it can do and build a flat tool registry.
  * Returns null when MCP is off or nothing usable came back, so callers can fall
@@ -465,6 +516,14 @@ async function loadTools(settings, onTool) {
 
   const defs = [];
   const byName = new Map();
+
+  // Registered first, so a server tool can never shadow one of these.
+  if (mcp.memory) {
+    for (const tool of MEMORY_TOOLS) {
+      defs.push(tool);
+      byName.set(tool.name, { builtin: tool.name });
+    }
+  }
 
   const lists = await Promise.all(
     servers.map(async (server) => {
@@ -561,6 +620,10 @@ async function execTool(registry, call, { overBudget, onTool, onConfirm, reason 
     return { ...base, text: "Error: tool call budget for this message is used up. Answer with what you have.", isError: true };
   }
 
+  // Local memory writes don't get the approval card: nothing leaves the browser,
+  // the chat still narrates them, and Settings can delete anything they saved.
+  if (entry.builtin) return runMemoryTool(entry.builtin, call, onTool);
+
   const info = { server: entry.server.name, tool: entry.tool, args: call.args };
 
   if (onConfirm) {
@@ -591,6 +654,37 @@ async function execTool(registry, call, { overBudget, onTool, onConfirm, reason 
     console.warn("[TL;DR] MCP call failed:", call.name, e);
     onTool?.({ phase: "error", ...info, message });
     return { ...base, text: `Error calling ${entry.tool}: ${message}`, isError: true };
+  }
+}
+
+/** memory_save / memory_forget, executed against chrome.storage.local. */
+async function runMemoryTool(name, call, onTool) {
+  const base = { id: call.id, name: call.name };
+  const args = call.args || {};
+  const info = { server: "Memory", tool: name, args };
+  onTool?.({ phase: "call", ...info });
+
+  try {
+    let text;
+    if (name === "memory_save") {
+      const saved = await saveMemory({
+        key: args.key,
+        value: args.value,
+        expiresInDays: args.expires_in_days,
+      });
+      text = saved.expiresAt
+        ? `Saved "${saved.key}". It will be forgotten on ${new Date(saved.expiresAt).toISOString().slice(0, 10)}.`
+        : `Saved "${saved.key}".`;
+    } else {
+      const gone = await forgetMemory(args.key);
+      text = gone ? `Forgot "${args.key}".` : `Nothing was saved under "${args.key}".`;
+    }
+    onTool?.({ phase: "result", ...info });
+    return { ...base, text, isError: false };
+  } catch (e) {
+    const message = e?.message || "memory failed";
+    onTool?.({ phase: "error", ...info, message });
+    return { ...base, text: `Error: ${message}`, isError: true };
   }
 }
 

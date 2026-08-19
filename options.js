@@ -1,6 +1,7 @@
 // options.js
 import { PROVIDERS, MCP_DEFAULTS, getSettings } from "./ai.js";
 import { probe } from "./mcp.js";
+import { listMemories, forgetMemory, clearMemories } from "./memory.js";
 
 const els = {
   providerGroup: document.getElementById("provider"),
@@ -23,6 +24,8 @@ const els = {
   mcpEnabled: document.getElementById("mcpEnabled"),
   mcpConfirm: document.getElementById("mcpConfirm"),
   mcpActions: document.getElementById("mcpActions"),
+  mcpMemory: document.getElementById("mcpMemory"),
+  memoryList: document.getElementById("memoryList"),
   mcpMaxCalls: document.getElementById("mcpMaxCalls"),
   mcpList: document.getElementById("mcpList"),
   addServerBtn: document.getElementById("addServerBtn"),
@@ -181,6 +184,67 @@ function addServerCard(server) {
   return card;
 }
 
+// ---- Advanced tab: saved memories --------------------------------------
+
+const shortDate = (ms) => new Date(ms).toISOString().slice(0, 10);
+
+/**
+ * Memories are written by the model at chat time and live in local storage, so
+ * they're shown live rather than being part of the Save round trip.
+ */
+async function renderMemories() {
+  const items = await listMemories();
+  els.memoryList.textContent = "";
+
+  if (!items.length) {
+    const empty = document.createElement("p");
+    empty.className = "mem-empty";
+    empty.textContent = "Nothing remembered yet.";
+    els.memoryList.append(empty);
+    return;
+  }
+
+  for (const item of items) {
+    const row = document.createElement("div");
+    row.className = "mem-row";
+
+    const key = document.createElement("span");
+    key.className = "mem-key";
+    key.textContent = item.key;
+
+    const value = document.createElement("span");
+    value.className = "mem-value";
+    value.textContent = item.value;
+    value.title = item.value;
+
+    const meta = document.createElement("span");
+    meta.className = "mem-meta";
+    meta.textContent = item.expiresAt ? `until ${shortDate(item.expiresAt)}` : shortDate(item.savedAt);
+
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "link-btn";
+    del.textContent = "Forget";
+    del.addEventListener("click", async () => {
+      await forgetMemory(item.key);
+      renderMemories();
+    });
+
+    row.append(key, value, meta, del);
+    els.memoryList.append(row);
+  }
+
+  const clear = document.createElement("button");
+  clear.type = "button";
+  clear.className = "link-btn";
+  clear.textContent = "Forget everything";
+  clear.addEventListener("click", async () => {
+    await clearMemories();
+    renderMemories();
+  });
+  els.memoryList.append(clear);
+}
+
 function renderServers(servers) {
   els.mcpList.innerHTML = "";
   servers.forEach(addServerCard);
@@ -199,6 +263,7 @@ function readMcp() {
     enabled: els.mcpEnabled.checked,
     confirm: els.mcpConfirm.checked,
     actions: els.mcpActions.checked,
+    memory: els.mcpMemory.checked,
     maxCalls: Math.min(10, Math.max(1, Number(els.mcpMaxCalls.value) || MCP_DEFAULTS.maxCalls)),
     servers: collectServers(),
   };
@@ -262,6 +327,8 @@ async function load() {
   els.mcpEnabled.checked = s.mcp.enabled;
   els.mcpConfirm.checked = s.mcp.confirm;
   els.mcpActions.checked = s.mcp.actions;
+  els.mcpMemory.checked = s.mcp.memory;
+  renderMemories();
   els.mcpMaxCalls.value = s.mcp.maxCalls;
   renderServers(s.mcp.servers);
 

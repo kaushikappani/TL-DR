@@ -26,6 +26,7 @@ A Chrome extension that summarizes any web page or news article and lets you **a
 -  **Smart extraction** — pulls the real article body and skips nav, ads, comments, and clutter.
 -  **Model picker** — choose the model per provider (Gemini Flash/Pro, or Groq GPT-OSS/Compound), or type in any model ID the dropdown doesn't list.
 -  **MCP tools** *(Advanced)* — connect remote [MCP](https://modelcontextprotocol.io) servers and the model can call their tools while you chat about a page, asking your approval before each call.
+-  **Long-term memory** — the model keeps what it will need again (a login token, an account id, a preference) so you are not asked to sign in on every question; all of it visible and deletable in Settings.
 -  **Quick actions** — after each summary the model offers one-tap follow-ups written for that page (log the expense, add the event, break down the charges) instead of a fixed list of prompts.
 -  **Private by design** — your API key stays in your browser; page content goes only to your chosen AI provider (and any MCP server you add). No tracking, no servers.
 
@@ -103,6 +104,20 @@ Nothing leaves your browser until you press **Run**. **Skip** tells the model th
 declined, and it answers with what it already has. Untick **Ask me before running a tool**
 in Advanced to let trusted servers run unattended.
 
+**Staying logged in**
+
+Servers that require a sign-in usually tie it to the MCP session, so the extension keeps
+that session in local storage — it survives the service worker being shut down, which
+Chrome does after ~30 seconds idle. Without that you would be asked to log in again on
+almost every question.
+
+On top of that the model has a **memory**: when a tool hands it something it will need
+again — a token, an account or session id, a preference you stated — it saves it with a
+built-in `memory_save` tool, and everything saved is fed back into later conversations.
+Memory writes are local to your browser, so they skip the approval card, and every entry
+is listed under **Settings -> Advanced -> Memory** where you can forget one or all of
+them. The model gives tokens an expiry when it knows one.
+
 **Good to know**
 
 - Only the **Streamable HTTP** transport is supported (the current remote-MCP standard).
@@ -165,6 +180,7 @@ in Advanced to let trusted servers run unattended.
 | `background.js` | Service worker — extraction, provider calls, context menus, overlay injection |
 | `ai.js` | Provider-agnostic AI layer (Gemini + Groq, prompts, MCP tool loop) |
 | `mcp.js` | MCP client — JSON-RPC over the Streamable HTTP transport |
+| `memory.js` | Long-term memory the model writes to and reads back |
 | `pdftext.js` | Local PDF text extraction via pdf.js |
 | `content.js` | Readability-style page content extractor |
 | `popup.html` · `popup.css` · `popup.js` | Toolbar popup UI |

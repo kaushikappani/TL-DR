@@ -209,6 +209,29 @@ input:focus, select:focus, textarea:focus {
   white-space: nowrap;
 }
 .mcp-switch input { width: 16px; height: 16px; accent-color: var(--accent); margin: 0; }
+/* Saved memories */
+.mem-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 9px 11px;
+  margin-top: 8px;
+  background: var(--glass-2);
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  font-size: 13px;
+}
+.mem-key { font-weight: 600; white-space: nowrap; }
+.mem-value {
+  flex: 1;
+  color: var(--text-dim);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mem-meta { color: var(--text-dim); font-size: 11px; white-space: nowrap; }
+.mem-empty { color: var(--text-dim); font-size: 12px; margin-top: 8px; }
 .mcp-status.ok { color: var(--ok); }
 .mcp-status.error { color: var(--danger); }
 .hint { font-size: 12px; color: var(--text-dim); margin: 8px 0 0; }

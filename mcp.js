@@ -14,19 +14,49 @@ const REQUEST_TIMEOUT_MS = 30000;
 // Discovery runs before every answer, so a wedged server must not hold the
 // whole chat hostage for the full call timeout.
 const CONNECT_TIMEOUT_MS = 10000;
-// Re-use an initialized session and its tool list for a short while instead of
-// handshaking on every message. The worker is torn down often anyway.
-const SESSION_TTL_MS = 5 * 60 * 1000;
+// Sessions outlive the service worker on purpose: MV3 kills it after ~30s idle,
+// and a server that ties a login to the session would otherwise ask the user to
+// sign in again on every single question. If the server has expired it server
+// side, the next request 404s and we re-handshake.
+const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const TOOLS_TTL_MS = 2 * 60 * 1000;
+// Where persisted sessions live, keyed by server URL.
+const SESSION_STORE_KEY = "mcpSessions";
 // Tool results are fed straight back into the prompt — keep them bounded.
 const MAX_RESULT_CHARS = 8000;
 
 let nextId = 1;
 
-/** url -> { sessionId, expires } */
+/** url -> { sessionId, expires }. Hot cache in front of chrome.storage.local. */
 const sessions = new Map();
 /** url -> { tools, expires } */
 const toolLists = new Map();
+
+/** chrome.storage.local, or nothing at all outside the extension. */
+function store() {
+  return typeof chrome !== "undefined" && chrome.storage?.local ? chrome.storage.local : null;
+}
+
+async function readStoredSessions() {
+  const area = store();
+  if (!area) return {};
+  const raw = (await area.get(SESSION_STORE_KEY))[SESSION_STORE_KEY];
+  return raw && typeof raw === "object" ? raw : {};
+}
+
+async function writeStoredSession(url, entry) {
+  const area = store();
+  if (!area) return;
+  const all = await readStoredSessions();
+  const now = Date.now();
+  // Drop anything stale while we're here rather than growing forever.
+  for (const [key, value] of Object.entries(all)) {
+    if (!value?.expires || value.expires <= now) delete all[key];
+  }
+  if (entry) all[url] = entry;
+  else delete all[url];
+  await area.set({ [SESSION_STORE_KEY]: all });
+}
 
 /**
  * Parse the free-text header box ("Name: value" per line) into an object.
@@ -174,6 +204,14 @@ async function connect(server) {
   const cached = sessions.get(url);
   if (cached && cached.expires > Date.now()) return cached.sessionId;
 
+  // Nothing in memory — the worker may just have been restarted, so look for a
+  // session we established before it was torn down.
+  const stored = (await readStoredSessions())[url];
+  if (stored?.expires > Date.now()) {
+    sessions.set(url, stored);
+    return stored.sessionId;
+  }
+
   const { result, sessionId } = await rpc(
     server,
     "initialize",
@@ -188,7 +226,9 @@ async function connect(server) {
     await rpc(server, "notifications/initialized", {}, { notify: true, sessionId });
   } catch (_) {}
 
-  sessions.set(url, { sessionId, expires: Date.now() + SESSION_TTL_MS });
+  const entry = { sessionId, expires: Date.now() + SESSION_TTL_MS };
+  sessions.set(url, entry);
+  await writeStoredSession(url, entry);
   return sessionId;
 }
 
@@ -198,6 +238,7 @@ export function forget(server) {
     const url = checkUrl(server);
     sessions.delete(url);
     toolLists.delete(url);
+    writeStoredSession(url, null).catch(() => {});
   } catch (_) {}
 }
 
