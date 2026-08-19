@@ -55,12 +55,12 @@
 
       <div class="gem-chat gem-hidden" id="gem-chat-wrap">
         <div class="gem-label"><span>Ask about this ${state.selectionText ? "text" : "page"}</span></div>
+        <div class="gem-suggestions gem-hidden" id="gem-suggestions"></div>
         <div class="gem-chatlog" id="gem-chatlog"></div>
         <form class="gem-chatform" id="gem-chatform">
           <input id="gem-input" type="text" placeholder="Ask a question…" autocomplete="off" />
           <button type="submit" class="gem-send" id="gem-send">➤</button>
         </form>
-        <div class="gem-suggestions gem-hidden" id="gem-suggestions"></div>
       </div>
       <div class="gem-footer">
         <span class="gem-credit">
@@ -214,9 +214,21 @@
   }
 
   async function loadQuickActions(summary) {
+    // A visible placeholder while the model reads the page, so the row is never
+    // silently empty — and so a failure is obvious rather than invisible.
+    ui.suggestions.textContent = "";
+    ui.suggestions.classList.remove("gem-hidden");
+    const pending = document.createElement("button");
+    pending.type = "button";
+    pending.className = "gem-chip";
+    pending.textContent = "✨ Reading the page…";
+    pending.disabled = true;
+    ui.suggestions.append(pending);
+
     const reqPage = state.selectionText ? state.page : undefined;
     const resp = await send({ type: "SUGGEST", summary, page: reqPage });
-    if (resp?.ok && resp.actions?.length) renderQuickActions(resp.actions);
+    console.debug("[TL;DR] quick actions:", resp);
+    renderQuickActions(resp?.ok ? resp.actions || [] : []);
   }
 
   // Approval card for one MCP tool call, drawn inside the pending answer
@@ -354,7 +366,6 @@
 
   async function ask(question, opts = {}) {
     if (state.busy || !question.trim()) return;
-    ui.suggestions.classList.add("gem-hidden");
     addMessage("user", question);
     state.history.push({ role: "user", text: question });
     ui.input.value = "";

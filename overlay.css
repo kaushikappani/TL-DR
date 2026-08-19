@@ -158,6 +158,7 @@
   transition: background 0.2s, transform 0.08s !important;
 }
 #__gem_summarizer_panel__ .gem-chip:hover { background: rgba(255, 255, 255, 0.14) !important; }
+#__gem_summarizer_panel__ .gem-chip:disabled { color: #94a3b8 !important; opacity: 0.75 !important; cursor: default !important; }
 #__gem_summarizer_panel__ .gem-chip:active { transform: scale(0.95) !important; }
 #__gem_summarizer_panel__ .gem-chip-tool {
   background: rgba(99, 102, 241, 0.2) !important; border-color: rgba(99, 102, 241, 0.55) !important;

@@ -229,12 +229,23 @@ function renderQuickActions(actions) {
   }
 }
 
+// A visible placeholder while the model reads the page, so the row is never
+// silently empty — and so a failure is obvious rather than invisible.
+function markActionsPending() {
+  const chip = document.createElement("button");
+  chip.className = "chip loading";
+  chip.textContent = "✨ Reading the page…";
+  chip.disabled = true;
+  els.suggestions.append(chip);
+}
+
 async function loadQuickActions(summary) {
+  markActionsPending();
   const resp = await send({ type: "SUGGEST", summary });
-  // Keep the defaults on failure, and don't stomp on a chat already underway.
-  if (!resp?.ok || !resp.actions?.length) return;
-  if (els.suggestions.classList.contains("hidden")) return;
-  renderQuickActions(resp.actions);
+  els.suggestions.querySelector(".chip.loading")?.remove();
+  console.debug("[TL;DR] quick actions:", resp);
+  // Keep whatever chips are already there if the model had nothing to add.
+  if (resp?.ok && resp.actions?.length) renderQuickActions(resp.actions);
 }
 
 // ---- core flows ----
@@ -337,7 +348,6 @@ async function doSummarize() {
 async function ask(question, opts = {}) {
   if (state.busy || !question.trim()) return;
 
-  els.suggestions.classList.add("hidden");
   addMessage("user", question);
   state.history.push({ role: "user", text: question });
   els.chatInput.value = "";

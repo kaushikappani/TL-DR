@@ -440,12 +440,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             break;
           }
           let actions = [];
+          let note = "";
           try {
             actions = await suggestActions(page, msg.summary || "");
+            if (!actions.length) note = "the model suggested nothing usable";
           } catch (e) {
+            note = e?.message || "failed";
             console.warn("[TL;DR] quick actions failed:", e);
           }
-          sendResponse({ ok: true, actions });
+          // `note` only exists so an empty row is diagnosable from the console.
+          sendResponse({ ok: true, actions, note });
           break;
         }
         case "OPEN_OVERLAY": {
