@@ -181,11 +181,15 @@ function toolsDirective() {
     "you assumed. Today's date is " + today + ". Ask the user only when a required argument genuinely " +
     "cannot be inferred and guessing it would be wrong — and then ask for that one thing, not for " +
     "everything.\n\n" +
-    "You have a memory that outlives this conversation. When a tool hands you something that will be " +
-    "needed again — an auth token, a session or account id, a workspace name, a preference the user " +
-    "states — save it with memory_save so the user isn't asked to log in or repeat themselves next " +
-    "time. Give tokens an expiry in days if you know one. If a saved value stops working, memory_forget " +
-    "it and get a fresh one. Don't save one-off details or anything the user asked you not to keep.\n\n" +
+    "You have a memory that outlives this conversation. Save a thing with memory_save only when it is " +
+    "a concrete value you would otherwise have to ask the user for again and could pass straight back " +
+    "into a tool call: an auth token, an API key, an account or session id, a workspace or project " +
+    "name, a preference the user stated. Give tokens an expiry in days if you know one.\n\n" +
+    "Never save a status, a flag, or a claim about the state of things — \"logged in\", \"connected\", " +
+    "\"already done\", \"setup complete\". Whether something is still true is for a tool to tell you at " +
+    "the time; a remembered flag only goes stale and misleads you. If a tool says the user isn't " +
+    "authenticated, believe the tool over anything you remember, and memory_forget whatever contradicts " +
+    "it. Don't save one-off details or anything the user asked you not to keep.\n\n" +
     "Don't ask permission in prose and don't read the arguments back for approval. Before anything runs, " +
     "the user sees a card with the tool name and the exact arguments and can decline it there. Just say " +
     "in one short line which tool you're using and why, then make the call. If a call is declined, answer " +
