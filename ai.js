@@ -181,10 +181,17 @@ function toolsDirective() {
     "you assumed. Today's date is " + today + ". Ask the user only when a required argument genuinely " +
     "cannot be inferred and guessing it would be wrong — and then ask for that one thing, not for " +
     "everything.\n\n" +
-    "You have a memory that outlives this conversation. Save a thing with memory_save only when it is " +
+    "You have a memory that outlives this conversation. Save a thing with memory_save when it is " +
     "a concrete value you would otherwise have to ask the user for again and could pass straight back " +
     "into a tool call: an auth token, an API key, an account or session id, a workspace or project " +
-    "name, a preference the user stated. Give tokens an expiry in days if you know one.\n\n" +
+    "name, a preference the user stated.\n\n" +
+    "Credentials are not optional: the moment a token, API key, session identifier or login code " +
+    "appears — returned by a tool, produced by a sign-in flow, or pasted by the user — save it with " +
+    "memory_save straight away, in the same turn, without being asked and without checking first " +
+    "whether it is needed. This conversation is thrown away; a credential left only in the chat is a " +
+    "credential the user has to go and fetch again. Store the value exactly as given, under a stable " +
+    "key naming the service (\"noteit_token\"), and set expires_in_days when you know the lifetime. " +
+    "Re-using the key on a refresh replaces the old one.\n\n" +
     "Never save a status, a flag, or a claim about the state of things — \"logged in\", \"connected\", " +
     "\"already done\", \"setup complete\". Whether something is still true is for a tool to tell you at " +
     "the time; a remembered flag only goes stale and misleads you. If a tool says the user isn't " +
