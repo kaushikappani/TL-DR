@@ -48,9 +48,10 @@ function send(message) {
 }
 
 // Open a streaming port for a SUMMARIZE/ASK request. onChunk(text) fires for
-// each incremental piece, onTool(event) for MCP tool activity; resolves with
-// the final {ok, summary|answer, page}.
-function streamRequest(message, onChunk, onTool) {
+// each incremental piece, onTool(event) for MCP tool activity, and
+// onConfirm(request, respond) when a tool call needs the user's go-ahead;
+// resolves with the final {ok, summary|answer, page}.
+function streamRequest(message, onChunk, onTool, onConfirm) {
   return new Promise((resolve) => {
     let port;
     try {
@@ -69,6 +70,13 @@ function streamRequest(message, onChunk, onTool) {
     port.onMessage.addListener((m) => {
       if (m.type === "chunk") onChunk(m.text);
       else if (m.type === "tool") onTool?.(m);
+      else if (m.type === "confirm") {
+        onConfirm?.(m, (approved) => {
+          try {
+            port.postMessage({ type: "TOOL_DECISION", id: m.id, approved });
+          } catch (_) {}
+        });
+      }
       else if (m.type === "done") finish({ ok: true, ...m });
       else if (m.type === "error") finish({ ok: false, error: m.error });
     });
@@ -147,9 +155,61 @@ function setBusy(busy) {
 function showToolActivity(bubble, ev, answerSoFar) {
   if (answerSoFar) return; // real text already arrived — don't overwrite it
   const label = ev.tool ? `${ev.server} · ${ev.tool}` : ev.server;
+  if (ev.phase === "ask") return; // the approval card takes the bubble over
   if (ev.phase === "call") bubble.textContent = `🔧 ${label}…`;
   else if (ev.phase === "result") bubble.textContent = `🔧 ${label} ✓`;
+  else if (ev.phase === "declined") bubble.textContent = `🔧 ${label} skipped — answering without it…`;
   else if (ev.phase === "error") bubble.textContent = `🔧 ${label} failed — answering without it…`;
+}
+
+// Approval card for one tool call, drawn inside the pending answer bubble.
+// Built with DOM calls, not innerHTML — the args come from the model.
+function askToolPermission(bubble, req, respond) {
+  const label = `${req.server} · ${req.tool}`;
+  bubble.className = "msg model tool-ask";
+  bubble.textContent = "";
+
+  const title = document.createElement("div");
+  title.className = "tool-ask-title";
+  title.textContent = `🔧 Run ${label}?`;
+  bubble.append(title);
+
+  if (req.reason) {
+    const why = document.createElement("div");
+    why.className = "tool-ask-reason";
+    why.textContent = req.reason;
+    bubble.append(why);
+  }
+
+  const args = JSON.stringify(req.args || {});
+  if (args && args !== "{}") {
+    const pre = document.createElement("pre");
+    pre.className = "tool-ask-args";
+    pre.textContent = args.length > 300 ? `${args.slice(0, 300)}…` : args;
+    bubble.append(pre);
+  }
+
+  const actions = document.createElement("div");
+  actions.className = "tool-ask-actions";
+  const decide = (approved) => {
+    actions.querySelectorAll("button").forEach((b) => (b.disabled = true));
+    bubble.className = "msg model thinking";
+    bubble.textContent = approved ? `🔧 ${label}…` : `🔧 ${label} skipped — answering without it…`;
+    respond(approved);
+  };
+  const run = document.createElement("button");
+  run.className = "tool-run";
+  run.textContent = "Run";
+  run.addEventListener("click", () => decide(true));
+  const skip = document.createElement("button");
+  skip.className = "tool-skip";
+  skip.textContent = "Skip";
+  skip.addEventListener("click", () => decide(false));
+  actions.append(run, skip);
+  bubble.append(actions);
+
+  bubble.scrollIntoView({ block: "end" });
+  run.focus();
 }
 
 // ---- core flows ----
@@ -268,8 +328,11 @@ async function ask(question) {
     bubble.scrollIntoView({ block: "end" });
   };
 
-  const resp = await streamRequest({ type: "ASK", history: state.history }, onChunk, (ev) =>
-    showToolActivity(bubble, ev, acc)
+  const resp = await streamRequest(
+    { type: "ASK", history: state.history },
+    onChunk,
+    (ev) => showToolActivity(bubble, ev, acc),
+    (req, respond) => askToolPermission(bubble, req, respond)
   );
   setBusy(false);
 

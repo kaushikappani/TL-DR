@@ -267,6 +267,37 @@ main::-webkit-scrollbar { display: none; } /* Chrome/Edge/Safari */
 .msg.model ul { margin: 4px 0; padding-left: 16px; }
 .msg.thinking { color: var(--text-dim); font-style: italic; }
 
+/* MCP tool approval card (inside a model bubble) */
+.msg.tool-ask { max-width: 100%; }
+.tool-ask-title { font-weight: 600; margin-bottom: 5px; }
+.tool-ask-reason { color: var(--text-dim); margin-bottom: 6px; }
+.tool-ask-args {
+  margin: 0 0 8px;
+  padding: 6px 8px;
+  background: rgba(15, 23, 42, 0.55);
+  border-radius: 9px;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.tool-ask-actions { display: flex; gap: 6px; }
+.tool-ask-actions button {
+  border: none;
+  border-radius: 10px;
+  padding: 6px 15px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tool-ask-actions button:disabled { opacity: 0.5; cursor: default; }
+.tool-ask-actions .tool-run { background: var(--accent-grad); color: #fff; }
+.tool-ask-actions .tool-skip {
+  background: var(--glass-2);
+  border: 1px solid var(--glass-border);
+  color: var(--text-dim);
+}
+
 .chat-form { display: flex; gap: 7px; }
 .chat-form input {
   flex: 1;

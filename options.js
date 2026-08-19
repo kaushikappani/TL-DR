@@ -21,6 +21,7 @@ const els = {
   tabs: document.getElementById("tabs"),
   panes: { general: document.getElementById("generalPane"), advanced: document.getElementById("advancedPane") },
   mcpEnabled: document.getElementById("mcpEnabled"),
+  mcpConfirm: document.getElementById("mcpConfirm"),
   mcpMaxCalls: document.getElementById("mcpMaxCalls"),
   mcpList: document.getElementById("mcpList"),
   addServerBtn: document.getElementById("addServerBtn"),
@@ -195,6 +196,7 @@ function collectServers() {
 function readMcp() {
   return {
     enabled: els.mcpEnabled.checked,
+    confirm: els.mcpConfirm.checked,
     maxCalls: Math.min(10, Math.max(1, Number(els.mcpMaxCalls.value) || MCP_DEFAULTS.maxCalls)),
     servers: collectServers(),
   };
@@ -256,6 +258,7 @@ async function load() {
 
   // advanced / MCP
   els.mcpEnabled.checked = s.mcp.enabled;
+  els.mcpConfirm.checked = s.mcp.confirm;
   els.mcpMaxCalls.value = s.mcp.maxCalls;
   renderServers(s.mcp.servers);
 

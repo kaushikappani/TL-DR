@@ -72,6 +72,7 @@ function normalizeCustom(raw) {
 // Advanced (MCP) defaults.
 export const MCP_DEFAULTS = {
   enabled: false,
+  confirm: true,    // ask the user before each tool call
   maxCalls: 4,      // tool calls allowed per user message
   servers: [],      // [{ id, name, url, headers, enabled, tools: [names] }]
 };
@@ -80,6 +81,7 @@ function normalizeMcp(raw) {
   const servers = Array.isArray(raw?.servers) ? raw.servers : [];
   return {
     enabled: !!raw?.enabled,
+    confirm: raw?.confirm !== false,
     maxCalls: Math.min(10, Math.max(1, Number(raw?.maxCalls) || MCP_DEFAULTS.maxCalls)),
     servers: servers
       .filter((sv) => sv && typeof sv.url === "string")
@@ -156,6 +158,17 @@ const QA_SYSTEM =
   "but make the distinction clear (e.g. 'The page doesn't cover this, but generally…'). " +
   "Do not present outside knowledge as if it came from the document, and don't fabricate specifics. " +
   "If you are unsure or the topic is beyond your knowledge, say so plainly. Be concise.";
+
+// Appended to the Q&A system prompt whenever MCP tools are in play.
+const TOOLS_SYSTEM =
+  "\n\nYou also have tools, provided by the MCP servers this user connected. " +
+  "Use one whenever it would make your answer more accurate or more current — live data, " +
+  "private or internal systems, anything the page doesn't cover. Answer directly, without a tool, " +
+  "when the page or your own knowledge already covers the question. " +
+  "Before each call the user is asked to approve it, so first state in one short line which tool " +
+  "you want and why, then make the call. If a call is declined, answer with what you already have " +
+  "and say plainly what you couldn't look up. Never invent tool output — only report what a tool " +
+  "actually returned.";
 
 // ---- personalization ---------------------------------------------------
 
@@ -272,12 +285,12 @@ export async function summarizePage(page) {
  * @param {Array}    history [{ role: 'user'|'model', text }]
  * @param {Function} onTool  optional progress callback for MCP tool activity
  */
-export async function answerQuestion(page, history, onTool) {
+export async function answerQuestion(page, history, onTool, onConfirm) {
   const s = await getSettings();
   const req = answerRequest(page, history, s);
   const registry = await loadTools(s, onTool);
   if (!registry) return dispatch(req);
-  return runWithTools(req, registry, () => {}, onTool, s.mcp.maxCalls);
+  return runWithTools(req, registry, () => {}, onTool, confirmHook(s, onConfirm), s.mcp.maxCalls);
 }
 
 /**
@@ -288,14 +301,14 @@ export async function summarizePageStream(page, onChunk) {
   const prefs = await getSettings();
   return dispatchStream(summaryRequest(page, prefs), onChunk);
 }
-export async function answerQuestionStream(page, history, onChunk, onTool) {
+export async function answerQuestionStream(page, history, onChunk, onTool, onConfirm) {
   const s = await getSettings();
   const req = answerRequest(page, history, s);
   const registry = await loadTools(s, onTool);
   // With tools in play the answer arrives after the tool round trips, so the
   // loop emits it as a single chunk instead of token by token.
   if (!registry) return dispatchStream(req, onChunk);
-  return runWithTools(req, registry, onChunk, onTool, s.mcp.maxCalls);
+  return runWithTools(req, registry, onChunk, onTool, confirmHook(s, onConfirm), s.mcp.maxCalls);
 }
 
 /** Route a neutral request to the active provider (non-streaming). */
@@ -376,17 +389,18 @@ async function loadTools(settings, onTool) {
  * The agentic loop: call the model with tools attached, run whatever it asks
  * for over MCP, feed the results back, repeat until it answers in text.
  */
-async function runWithTools(req, registry, onChunk, onTool, maxCalls) {
+async function runWithTools(req, registry, onChunk, onTool, onConfirm, maxCalls) {
   const { provider, apiKey, model } = await getActive();
   if (!apiKey) throw new Error("NO_API_KEY");
 
+  const base = { ...req, system: req.system + TOOLS_SYSTEM };
   const turns = [...req.turns];
   let used = 0;
 
   for (let step = 0; step < MAX_TOOL_STEPS; step++) {
     // Once the budget is spent, keep the declarations (history already refers
     // to them) but forbid further calls, which forces a final answer.
-    const turnReq = { ...req, turns, tools: registry.defs, toolChoice: used < maxCalls ? "auto" : "none" };
+    const turnReq = { ...base, turns, tools: registry.defs, toolChoice: used < maxCalls ? "auto" : "none" };
     const { text, toolCalls } =
       provider === "groq"
         ? await groqTurn(apiKey, model, turnReq)
@@ -402,13 +416,17 @@ async function runWithTools(req, registry, onChunk, onTool, maxCalls) {
     turns.push({ role: "tool_call", calls: toolCalls });
     const results = [];
     for (const call of toolCalls) {
-      results.push(await execTool(registry, call, ++used > maxCalls, onTool));
+      // Any line the model wrote alongside the call explains why it wants it —
+      // pass it along so the approval prompt can show the reason.
+      results.push(
+        await execTool(registry, call, { overBudget: ++used > maxCalls, onTool, onConfirm, reason: (text || "").trim() })
+      );
     }
     turns.push({ role: "tool_result", results });
   }
 
   // Safety net: too many rounds — answer with what we have, calls forbidden.
-  const lastReq = { ...req, turns, tools: registry.defs, toolChoice: "none" };
+  const lastReq = { ...base, turns, tools: registry.defs, toolChoice: "none" };
   const { text } = await (provider === "groq"
     ? groqTurn(apiKey, model, lastReq)
     : geminiTurn(apiKey, model, lastReq));
@@ -417,8 +435,16 @@ async function runWithTools(req, registry, onChunk, onTool, maxCalls) {
   return answer;
 }
 
+/**
+ * Only gate calls when the user asked for it AND there's a UI able to ask.
+ * The non-streaming path has no channel back to the user, so it runs directly.
+ */
+function confirmHook(settings, onConfirm) {
+  return settings.mcp?.confirm && typeof onConfirm === "function" ? onConfirm : null;
+}
+
 /** Run a single tool call, turning any failure into text the model can read. */
-async function execTool(registry, call, overBudget, onTool) {
+async function execTool(registry, call, { overBudget, onTool, onConfirm, reason } = {}) {
   const entry = registry.byName.get(call.name);
   const base = { id: call.id, name: call.name };
 
@@ -427,15 +453,35 @@ async function execTool(registry, call, overBudget, onTool) {
     return { ...base, text: "Error: tool call budget for this message is used up. Answer with what you have.", isError: true };
   }
 
-  onTool?.({ phase: "call", server: entry.server.name, tool: entry.tool, args: call.args });
+  const info = { server: entry.server.name, tool: entry.tool, args: call.args };
+
+  if (onConfirm) {
+    onTool?.({ phase: "ask", ...info });
+    let approved = false;
+    try {
+      approved = await onConfirm({ ...info, reason });
+    } catch (_) {
+      approved = false;
+    }
+    if (!approved) {
+      onTool?.({ phase: "declined", ...info });
+      return {
+        ...base,
+        text: "The user declined this tool call. Answer using what you already have, and say what you couldn't look up.",
+        isError: true,
+      };
+    }
+  }
+
+  onTool?.({ phase: "call", ...info });
   try {
     const { text, isError } = await callTool(entry.server, entry.tool, call.args);
-    onTool?.({ phase: "result", server: entry.server.name, tool: entry.tool, isError });
+    onTool?.({ phase: "result", ...info, isError });
     return { ...base, text, isError };
   } catch (e) {
     const message = e?.message || "tool call failed";
     console.warn("[TL;DR] MCP call failed:", call.name, e);
-    onTool?.({ phase: "error", server: entry.server.name, tool: entry.tool, message });
+    onTool?.({ phase: "error", ...info, message });
     return { ...base, text: `Error calling ${entry.tool}: ${message}`, isError: true };
   }
 }

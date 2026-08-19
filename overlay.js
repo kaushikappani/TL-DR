@@ -108,8 +108,9 @@
     });
   }
 
-  // Streaming port: post one request, receive {chunk|tool}* then {done}|{error}.
-  function streamRequest(message, onChunk, onTool) {
+  // Streaming port: post one request, receive {chunk|tool|confirm}* then
+  // {done}|{error}. onConfirm(request, respond) gates each MCP tool call.
+  function streamRequest(message, onChunk, onTool, onConfirm) {
     return new Promise((resolve) => {
       let port;
       try {
@@ -128,6 +129,13 @@
       port.onMessage.addListener((m) => {
         if (m.type === "chunk") onChunk(m.text);
         else if (m.type === "tool") onTool?.(m);
+        else if (m.type === "confirm") {
+          onConfirm?.(m, (approved) => {
+            try {
+              port.postMessage({ type: "TOOL_DECISION", id: m.id, approved });
+            } catch (_) {}
+          });
+        }
         else if (m.type === "done") finish({ ok: true, ...m });
         else if (m.type === "error") finish({ ok: false, error: m.error });
       });
@@ -183,6 +191,56 @@
     ui.chatlog.appendChild(div);
     div.scrollIntoView({ block: "end" });
     return div;
+  }
+
+  // Approval card for one MCP tool call, drawn inside the pending answer
+  // bubble. Built with DOM calls, not innerHTML — the args come from the model.
+  function askToolPermission(bubble, req, respond) {
+    const label = `${req.server} · ${req.tool}`;
+    bubble.className = "gem-msg gem-model gem-tool-ask";
+    bubble.textContent = "";
+
+    const title = document.createElement("div");
+    title.className = "gem-tool-ask-title";
+    title.textContent = `🔧 Run ${label}?`;
+    bubble.append(title);
+
+    if (req.reason) {
+      const why = document.createElement("div");
+      why.className = "gem-tool-ask-reason";
+      why.textContent = req.reason;
+      bubble.append(why);
+    }
+
+    const args = JSON.stringify(req.args || {});
+    if (args && args !== "{}") {
+      const pre = document.createElement("pre");
+      pre.className = "gem-tool-ask-args";
+      pre.textContent = args.length > 300 ? `${args.slice(0, 300)}…` : args;
+      bubble.append(pre);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "gem-tool-ask-actions";
+    const decide = (approved) => {
+      actions.querySelectorAll("button").forEach((b) => (b.disabled = true));
+      bubble.className = "gem-msg gem-model gem-thinking";
+      bubble.textContent = approved ? `🔧 ${label}…` : `🔧 ${label} skipped — answering without it…`;
+      respond(approved);
+    };
+    const run = document.createElement("button");
+    run.className = "gem-tool-run";
+    run.textContent = "Run";
+    run.addEventListener("click", () => decide(true));
+    const skip = document.createElement("button");
+    skip.className = "gem-tool-skip";
+    skip.textContent = "Skip";
+    skip.addEventListener("click", () => decide(false));
+    actions.append(run, skip);
+    bubble.append(actions);
+
+    bubble.scrollIntoView({ block: "end" });
+    run.focus();
   }
 
   function setBusy(b) {
@@ -290,17 +348,19 @@
       };
       // While an MCP tool runs there is nothing to stream, so narrate it.
       const onTool = (ev) => {
-        if (acc) return;
+        if (acc || ev.phase === "ask") return; // "ask" -> the approval card owns the bubble
         const label = ev.tool ? `${ev.server} · ${ev.tool}` : ev.server;
         bubble.textContent =
           ev.phase === "call" ? `🔧 ${label}…`
           : ev.phase === "result" ? `🔧 ${label} ✓`
+          : ev.phase === "declined" ? `🔧 ${label} skipped — answering without it…`
           : `🔧 ${label} failed — answering without it…`;
       };
       const resp = await streamRequest(
         { type: "ASK", page: reqPage, history: state.history },
         onChunk,
-        onTool
+        onTool,
+        (req, respond) => askToolPermission(bubble, req, respond)
       );
       if (!resp.ok) throw new Error(resp.error);
       bubble.classList.remove("gem-thinking");

@@ -148,6 +148,31 @@
 #__gem_summarizer_panel__ .gem-model ul { margin: 4px 0 !important; padding-left: 16px !important; }
 #__gem_summarizer_panel__ .gem-thinking { color: #94a3b8 !important; font-style: italic !important; }
 
+/* MCP tool approval card */
+#__gem_summarizer_panel__ .gem-tool-ask { max-width: 100% !important; }
+#__gem_summarizer_panel__ .gem-tool-ask-title { font-weight: 600 !important; margin-bottom: 5px !important; }
+#__gem_summarizer_panel__ .gem-tool-ask-reason { color: #94a3b8 !important; margin-bottom: 6px !important; }
+#__gem_summarizer_panel__ .gem-tool-ask-args {
+  margin: 0 0 8px !important; padding: 6px 8px !important;
+  background: rgba(15, 23, 42, 0.55) !important; border-radius: 9px !important;
+  font-size: 11px !important; font-family: ui-monospace, SFMono-Regular, Menlo, monospace !important;
+  white-space: pre-wrap !important; word-break: break-word !important; color: #cbd5e1 !important;
+}
+#__gem_summarizer_panel__ .gem-tool-ask-actions { display: flex !important; gap: 6px !important; }
+#__gem_summarizer_panel__ .gem-tool-ask-actions button {
+  border: none !important; border-radius: 10px !important; padding: 6px 15px !important;
+  font-family: inherit !important; font-size: 12px !important; font-weight: 600 !important;
+  cursor: pointer !important; line-height: 1.2 !important;
+}
+#__gem_summarizer_panel__ .gem-tool-ask-actions button:disabled { opacity: 0.5 !important; cursor: default !important; }
+#__gem_summarizer_panel__ .gem-tool-run {
+  background: linear-gradient(135deg, #6366f1 0%, #818cf8 100%) !important; color: #fff !important;
+}
+#__gem_summarizer_panel__ .gem-tool-skip {
+  background: rgba(255, 255, 255, 0.08) !important; color: #94a3b8 !important;
+  border: 1px solid rgba(148, 163, 184, 0.2) !important;
+}
+
 #__gem_summarizer_panel__ .gem-chatform { display: flex !important; gap: 7px !important; }
 #__gem_summarizer_panel__ .gem-chatform input {
   flex: 1 !important; background: rgba(255, 255, 255, 0.08) !important; border: 1px solid rgba(148, 163, 184, 0.2) !important;

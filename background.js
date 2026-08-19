@@ -276,10 +276,45 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 // sendMessage/sendResponse is one-shot and can't stream. Clients that want
 // token-by-token output open a port named "stream" and post a single request;
 // we reply with {type:'chunk'} messages, then {type:'done'} or {type:'error'}.
+// How long an unanswered tool-approval prompt waits before it counts as "no".
+const CONFIRM_TIMEOUT_MS = 2 * 60 * 1000;
+
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== "stream") return;
 
+  // Pending tool approvals for this port: id -> resolve(approved).
+  const awaitingDecision = new Map();
+  let decisionSeq = 0;
+
+  /** Ask the UI to approve one tool call. Resolves false if it never answers. */
+  const askToRunTool = (info) =>
+    new Promise((resolve) => {
+      const id = ++decisionSeq;
+      const settle = (approved) => {
+        if (!awaitingDecision.delete(id)) return;
+        clearTimeout(timer);
+        resolve(approved);
+      };
+      const timer = setTimeout(() => settle(false), CONFIRM_TIMEOUT_MS);
+      awaitingDecision.set(id, settle);
+      try {
+        port.postMessage({ type: "confirm", id, ...info });
+      } catch (_) {
+        settle(false); // panel/popup already gone
+      }
+    });
+
+  // If the popup closes mid-question, nothing can approve anything any more.
+  port.onDisconnect.addListener(() => {
+    for (const settle of [...awaitingDecision.values()]) settle(false);
+  });
+
   port.onMessage.addListener((msg) => {
+    if (msg && msg.type === "TOOL_DECISION") {
+      awaitingDecision.get(msg.id)?.(!!msg.approved);
+      return;
+    }
+
     (async () => {
       try {
         const tab = await getActiveTab();
@@ -311,7 +346,7 @@ chrome.runtime.onConnect.addListener((port) => {
             page = await extractTab(tab.id, tab.url, tab);
             await cacheSet(tab.id, tab.url, page);
           }
-          const answer = await answerQuestionStream(page, msg.history || [], onChunk, onTool);
+          const answer = await answerQuestionStream(page, msg.history || [], onChunk, onTool, askToRunTool);
           port.postMessage({ type: "done", answer });
         } else {
           port.postMessage({ type: "error", error: "Unknown stream request." });

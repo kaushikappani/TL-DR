@@ -25,7 +25,7 @@ A Chrome extension that summarizes any web page or news article and lets you **a
 -  **Floating panel** — a draggable, minimizable panel that lives on the page, so you never lose your place when you click away.
 -  **Smart extraction** — pulls the real article body and skips nav, ads, comments, and clutter.
 -  **Model picker** — choose the model per provider (Gemini Flash/Pro, or Groq GPT-OSS/Compound), or type in any model ID the dropdown doesn't list.
--  **MCP tools** *(Advanced)* — connect remote [MCP](https://modelcontextprotocol.io) servers and the model can call their tools while you chat about a page.
+-  **MCP tools** *(Advanced)* — connect remote [MCP](https://modelcontextprotocol.io) servers and the model can call their tools while you chat about a page, asking your approval before each call.
 -  **Private by design** — your API key stays in your browser; page content goes only to your chosen AI provider (and any MCP server you add). No tracking, no servers.
 
 ---
@@ -82,8 +82,19 @@ docs search, your own internal API.
 4. Click **Test** — it handshakes and lists the tools it found — then **Save**.
 
 Then just ask a question in the popup or floating panel. When the model decides a tool
-would help, the chat bubble shows what it is calling (🔧 *Server · tool*), the result is fed
-back in, and it answers with the tool output in hand.
+would help, the chat shows an approval card — which tool, why it wants it, and the exact
+arguments:
+
+```
+🔧 Run Jira · get_ticket?
+Let me check the ticket tracker for that.
+{"id":"TICKET-9"}
+                                            [ Run ]  [ Skip ]
+```
+
+Nothing leaves your browser until you press **Run**. **Skip** tells the model the call was
+declined, and it answers with what it already has. Untick **Ask me before running a tool**
+in Advanced to let trusted servers run unattended.
 
 **Good to know**
 
@@ -93,6 +104,8 @@ back in, and it answers with the tool output in hand.
 - Tools are offered on the **Q&A path only** — the one-click summary is a pure
   read-the-page task and stays a single, fast call.
 - **Max tool calls per message** caps the loop so one question can't run away.
+- An approval prompt that goes unanswered for two minutes counts as a **Skip**, and closing
+  the popup mid-question declines anything still pending.
 - With tools enabled the answer arrives in one piece instead of streaming token by
   token, because the model needs the tool results before it can write it.
 - Only add servers you trust: the model chooses the arguments it sends, and those can

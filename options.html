@@ -147,6 +147,15 @@
           <span>Let the model use MCP tools in chat</span>
         </label>
 
+        <label class="switch-row">
+          <input type="checkbox" id="mcpConfirm" />
+          <span>Ask me before running a tool</span>
+        </label>
+        <p class="hint">
+          The chat shows which tool the model wants and why; nothing runs until you press
+          <strong>Run</strong>. Turn this off to let approved servers run unattended.
+        </p>
+
         <label class="field-label" for="mcpMaxCalls">Max tool calls per message</label>
         <input id="mcpMaxCalls" type="number" min="1" max="10" step="1" />
         <p class="hint">A ceiling on the tool loop so a single question can't run away.</p>
