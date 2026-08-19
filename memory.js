@@ -14,6 +14,22 @@ const MAX_VALUE_CHARS = 1000;
 // The whole set rides in every prompt, so cap what that can cost.
 const MAX_BLOCK_CHARS = 4000;
 
+// Values that describe a state rather than carry one. The model keeps trying to
+// save these ("noteit_auth_status": "logged_in") even when told not to, and they
+// are worse than useless: nothing authenticates with them, and they outlive the
+// state they claim, so a dead session still reads as logged in. Whether
+// something is still true is a question for a tool, asked fresh each time.
+// Single letters and bare digits stay off this list: "1" or "n" is far more
+// likely to be someone's account id than a state claim.
+const STATUS_VALUE =
+  /^(logged[\s_-]?(in|out)|signed[\s_-]?(in|out)|authenticated|unauthenticated|authorized|connected|disconnected|active|inactive|enabled|disabled|done|completed?|finished|success(ful)?|failed|failure|valid|invalid|verified|unverified|pending|ready|configured|installed|registered|subscribed|true|false|yes|no|on|off|ok|okay|none|null|n\/a)$/i;
+
+/** True when a value is a state claim, not something you could pass to a tool. */
+export function looksLikeStatus(value) {
+  const bare = String(value || "").trim().replace(/[.!"']+$/, "");
+  return STATUS_VALUE.test(bare);
+}
+
 /** chrome.storage.local, or nothing at all outside the extension. */
 function store() {
   return typeof chrome !== "undefined" && chrome.storage?.local ? chrome.storage.local : null;
@@ -41,7 +57,9 @@ export async function listMemories() {
   const items = (Array.isArray(raw) ? raw : []).map(clean).filter(Boolean);
 
   const now = Date.now();
-  const live = items.filter((m) => !m.expiresAt || m.expiresAt > now);
+  // Status flags saved by older builds get swept out here rather than lingering
+  // in the prompt until someone notices them in Settings.
+  const live = items.filter((m) => (!m.expiresAt || m.expiresAt > now) && !looksLikeStatus(m.value));
   if (live.length !== items.length) await area.set({ [STORE_KEY]: live });
 
   return live.sort((a, b) => b.savedAt - a.savedAt);
@@ -63,6 +81,12 @@ export async function saveMemory({ key, value, expiresInDays }) {
     expiresAt: days > 0 ? Date.now() + days * 86400000 : 0,
   });
   if (!item) throw new Error("A memory needs both a key and a value.");
+  if (looksLikeStatus(item.value)) {
+    throw new Error(
+      `"${item.value}" is a status, not a value — it can't be passed to a tool and it goes stale on ` +
+        "its own. Save the token, id or setting itself, or save nothing and check the state with a tool."
+    );
+  }
 
   const rest = (await listMemories()).filter((m) => m.key !== item.key);
   // Oldest out first once the cabinet is full.
