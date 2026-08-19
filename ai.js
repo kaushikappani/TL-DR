@@ -11,8 +11,28 @@ export const PROVIDERS = {
   },
   groq: {
     label: "Groq",
-    defaultModel: "llama-3.3-70b-versatile",
+    defaultModel: "openai/gpt-oss-120b",
     keysUrl: "https://console.groq.com/keys",
+  },
+};
+
+// Models we used to offer that have since been retired; map them onto a current
+// one so saved settings keep working instead of 404-ing at request time.
+const RETIRED = {
+  groq: {
+    "llama-3.3-70b-versatile": "openai/gpt-oss-120b",
+    "llama-3.1-8b-instant": "openai/gpt-oss-20b",
+    "llama3-70b-8192": "openai/gpt-oss-120b",
+    "llama3-8b-8192": "openai/gpt-oss-20b",
+    "mixtral-8x7b-32768": "openai/gpt-oss-20b",
+    "gemma2-9b-it": "openai/gpt-oss-20b",
+  },
+  gemini: {
+    "gemini-1.5-flash": "gemini-flash-latest",
+    "gemini-1.5-flash-8b": "gemini-flash-lite-latest",
+    "gemini-1.5-pro": "gemini-pro-latest",
+    "gemini-1.0-pro": "gemini-flash-latest",
+    "gemini-pro": "gemini-flash-latest",
   },
 };
 
@@ -30,6 +50,18 @@ export const PREF_DEFAULTS = {
   prefTone: "",             // free-text persona/tone, e.g. "explain like a developer"
 };
 
+/** Resolve a saved model id: fall back to the default, then retire-map it. */
+function live(provider, saved) {
+  const model = saved || PROVIDERS[provider].defaultModel;
+  return RETIRED[provider][model] || model;
+}
+
+/** Extra model ids the user typed in on the options page. */
+function normalizeCustom(raw) {
+  const pick = (v) => (Array.isArray(v) ? v.filter((m) => typeof m === "string" && m.trim()) : []);
+  return { gemini: pick(raw?.gemini), groq: pick(raw?.groq) };
+}
+
 export async function getSettings() {
   const s = await chrome.storage.sync.get([
     "provider",
@@ -37,6 +69,8 @@ export async function getSettings() {
     "geminiModel",
     "groqKey",
     "groqModel",
+    // model ids the user added by hand
+    "customModels",
     // legacy keys from the Gemini-only version
     "apiKey",
     "model",
@@ -48,9 +82,9 @@ export async function getSettings() {
 
   // Migrate legacy single-key settings into the Gemini slot.
   const geminiKey = s.geminiKey || s.apiKey || "";
-  const geminiModel = s.geminiModel || s.model || PROVIDERS.gemini.defaultModel;
+  const geminiModel = live("gemini", s.geminiModel || s.model);
   const groqKey = s.groqKey || "";
-  const groqModel = s.groqModel || PROVIDERS.groq.defaultModel;
+  const groqModel = live("groq", s.groqModel);
 
   const prefs = {
     prefLength: s.prefLength || PREF_DEFAULTS.prefLength,
@@ -60,7 +94,9 @@ export async function getSettings() {
     prefTone: typeof s.prefTone === "string" ? s.prefTone : PREF_DEFAULTS.prefTone,
   };
 
-  return { provider, geminiKey, geminiModel, groqKey, groqModel, ...prefs };
+  const customModels = normalizeCustom(s.customModels);
+
+  return { provider, geminiKey, geminiModel, groqKey, groqModel, customModels, ...prefs };
 }
 
 /** The active provider's key + model. */

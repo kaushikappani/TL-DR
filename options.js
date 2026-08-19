@@ -23,6 +23,75 @@ const els = {
 
 let currentProvider = "gemini";
 
+// Sentinel option that opens the "type your own model ID" row.
+const CUSTOM = "__custom__";
+// Model IDs the user typed in, per provider. Persisted alongside the settings.
+let customModels = { gemini: [], groq: [] };
+
+const modelSelect = (provider) => (provider === "groq" ? els.groqModel : els.geminiModel);
+const providerOf = (sel) => (sel === els.groqModel ? "groq" : "gemini");
+const partOf = (sel, suffix) => document.getElementById(sel.id.replace("Model", suffix));
+const hasOption = (sel, id) => [...sel.options].some((o) => o.value === id);
+
+// Add a model ID to the dropdown (just above the "add" sentinel) if it's new.
+function ensureOption(sel, id, custom) {
+  if (hasOption(sel, id)) return;
+  const opt = document.createElement("option");
+  opt.value = id;
+  opt.textContent = custom ? `${id} (custom)` : id;
+  opt.dataset.custom = custom ? "1" : "";
+  sel.insertBefore(opt, sel.querySelector(`option[value="${CUSTOM}"]`));
+}
+
+// The custom row is only open while the sentinel is picked; the remove link
+// only shows while a user-added model is picked.
+function syncModelRow(sel) {
+  const adding = sel.value === CUSTOM;
+  partOf(sel, "CustomRow").classList.toggle("hidden", !adding);
+  partOf(sel, "Remove").classList.toggle("hidden", !customModels[providerOf(sel)].includes(sel.value));
+}
+
+/** The model to save/test — never the sentinel. */
+function chosenModel(sel) {
+  return sel.value === CUSTOM ? "" : sel.value;
+}
+
+function addCustomModel(sel) {
+  const input = partOf(sel, "CustomInput");
+  const id = input.value.trim();
+  if (!id) {
+    status("Type a model ID first.", "error");
+    input.focus();
+    return false;
+  }
+  if (!/^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/.test(id)) {
+    status("That doesn't look like a model ID.", "error");
+    input.focus();
+    return false;
+  }
+  const provider = providerOf(sel);
+  if (!hasOption(sel, id)) {
+    customModels[provider] = [...customModels[provider], id];
+    ensureOption(sel, id, true);
+  }
+  sel.value = id;
+  input.value = "";
+  syncModelRow(sel);
+  status(`Added ${id}. Use "Test connection" to check it, then Save.`, "ok");
+  return true;
+}
+
+function removeCustomModel(sel) {
+  const provider = providerOf(sel);
+  const id = sel.value;
+  if (!customModels[provider].includes(id)) return;
+  customModels[provider] = customModels[provider].filter((m) => m !== id);
+  sel.querySelector(`option[value="${CSS.escape(id)}"]`)?.remove();
+  sel.selectedIndex = 0;
+  syncModelRow(sel);
+  status(`Removed ${id}. Don't forget to Save.`, "ok");
+}
+
 // A segmented control whose buttons carry data-val; tracks one selected value.
 function initSegment(group) {
   group.addEventListener("click", (e) => {
@@ -63,10 +132,18 @@ function setProvider(provider) {
 
 async function load() {
   const s = await getSettings();
+  customModels = s.customModels;
+
   els.geminiKey.value = s.geminiKey || "";
-  els.geminiModel.value = s.geminiModel;
   els.groqKey.value = s.groqKey || "";
-  els.groqModel.value = s.groqModel;
+  for (const provider of ["gemini", "groq"]) {
+    const sel = modelSelect(provider);
+    customModels[provider].forEach((id) => ensureOption(sel, id, true));
+    // A model saved before it was listed (or from an older build) still shows.
+    ensureOption(sel, s[`${provider}Model`], false);
+    sel.value = s[`${provider}Model`];
+    syncModelRow(sel);
+  }
   setProvider(s.provider);
 
   // personalization
@@ -84,6 +161,27 @@ els.toggleBtns.forEach((btn) => {
 // Preference segmented controls.
 [els.prefLength, els.prefFormat, els.prefLevel].forEach(initSegment);
 
+// Model dropdowns: open the custom row when the sentinel is picked.
+[els.geminiModel, els.groqModel].forEach((sel) => {
+  sel.addEventListener("change", () => {
+    syncModelRow(sel);
+    if (sel.value === CUSTOM) partOf(sel, "CustomInput").focus();
+  });
+});
+document.querySelectorAll(".add-model").forEach((btn) => {
+  btn.addEventListener("click", () => addCustomModel(document.getElementById(btn.dataset.target)));
+});
+document.querySelectorAll(".remove-model").forEach((btn) => {
+  btn.addEventListener("click", () => removeCustomModel(document.getElementById(btn.dataset.target)));
+});
+document.querySelectorAll(".custom-row input").forEach((input) => {
+  input.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    addCustomModel(document.getElementById(input.closest(".custom-row").querySelector(".add-model").dataset.target));
+  });
+});
+
 // Show/hide key buttons.
 document.querySelectorAll(".toggle-key").forEach((btn) => {
   btn.addEventListener("click", () => {
@@ -99,12 +197,17 @@ els.saveBtn.addEventListener("click", async () => {
     status(`Please enter your ${PROVIDERS[provider].label} API key.`, "error");
     return;
   }
+  // Half-finished custom entry: add it now rather than saving the sentinel.
+  const sel = modelSelect(provider);
+  if (sel.value === CUSTOM && !addCustomModel(sel)) return;
+
   await chrome.storage.sync.set({
     provider,
     geminiKey: els.geminiKey.value.trim(),
-    geminiModel: els.geminiModel.value,
+    geminiModel: chosenModel(els.geminiModel) || PROVIDERS.gemini.defaultModel,
     groqKey: els.groqKey.value.trim(),
-    groqModel: els.groqModel.value,
+    groqModel: chosenModel(els.groqModel) || PROVIDERS.groq.defaultModel,
+    customModels,
     // personalization
     prefLength: getSegment(els.prefLength) || "standard",
     prefFormat: getSegment(els.prefFormat) || "bullets",
@@ -120,10 +223,12 @@ els.testBtn.addEventListener("click", async () => {
   const provider = currentProvider;
   status("Testing…", "loading");
   try {
+    const model = chosenModel(modelSelect(provider));
+    if (!model) throw new Error("Pick a model, or add one and press Add.");
     if (provider === "groq") {
-      await testGroq(els.groqKey.value.trim(), els.groqModel.value);
+      await testGroq(els.groqKey.value.trim(), model);
     } else {
-      await testGemini(els.geminiKey.value.trim(), els.geminiModel.value);
+      await testGemini(els.geminiKey.value.trim(), model);
     }
     status("✓ Connection works! Don't forget to Save.", "ok");
   } catch (e) {

@@ -24,7 +24,7 @@ A Chrome extension that summarizes any web page or news article and lets you **a
 -  **Right-click menu** — *"Summarize this page"* anywhere, or *"Summarize selection"* on highlighted text.
 -  **Floating panel** — a draggable, minimizable panel that lives on the page, so you never lose your place when you click away.
 -  **Smart extraction** — pulls the real article body and skips nav, ads, comments, and clutter.
--  **Model picker** — choose the model per provider (Gemini Flash/Pro, or Groq Llama/GPT-OSS).
+-  **Model picker** — choose the model per provider (Gemini Flash/Pro, or Groq GPT-OSS/Compound), or type in any model ID the dropdown doesn't list.
 -  **Private by design** — your API key stays in your browser; page content goes only to your chosen AI provider. No tracking, no servers.
 
 ---
