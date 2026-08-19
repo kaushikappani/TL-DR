@@ -103,6 +103,9 @@ in Advanced to let trusted servers run unattended.
   transport isn't implemented.
 - Tools are offered on the **Q&A path only** — the one-click summary is a pure
   read-the-page task and stays a single, fast call.
+- The model is told to read tool arguments **off the page** — amounts, dates, merchants,
+  reference numbers — and to ask you only for what genuinely can't be inferred. Check the
+  approval card before pressing Run; wrong values are a Skip away.
 - **Max tool calls per message** caps the loop so one question can't run away.
 - An approval prompt that goes unanswered for two minutes counts as a **Skip**, and closing
   the popup mid-question declines anything still pending.

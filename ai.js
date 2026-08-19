@@ -159,16 +159,30 @@ const QA_SYSTEM =
   "Do not present outside knowledge as if it came from the document, and don't fabricate specifics. " +
   "If you are unsure or the topic is beyond your knowledge, say so plainly. Be concise.";
 
-// Appended to the Q&A system prompt whenever MCP tools are in play.
-const TOOLS_SYSTEM =
-  "\n\nYou also have tools, provided by the MCP servers this user connected. " +
-  "Use one whenever it would make your answer more accurate or more current — live data, " +
-  "private or internal systems, anything the page doesn't cover. Answer directly, without a tool, " +
-  "when the page or your own knowledge already covers the question. " +
-  "Before each call the user is asked to approve it, so first state in one short line which tool " +
-  "you want and why, then make the call. If a call is declined, answer with what you already have " +
-  "and say plainly what you couldn't look up. Never invent tool output — only report what a tool " +
-  "actually returned.";
+// Appended to the Q&A system prompt whenever MCP tools are in play. The
+// argument-filling paragraph matters as much as the rest: without it models
+// interrogate the user for values that are sitting in the page already.
+function toolsDirective() {
+  const today = new Date().toISOString().slice(0, 10);
+  return (
+    "\n\nYou also have tools, provided by the MCP servers this user connected. Use one whenever it " +
+    "makes your answer more accurate or more current, or when the user asks for something a tool does — " +
+    "recording, fetching, or changing data. Answer directly, without a tool, when the page or your own " +
+    "knowledge already covers the question.\n\n" +
+    "Fill in the tool's arguments yourself from the document above and the conversation so far. Amounts, " +
+    "dates, merchants, names, reference numbers and descriptions are usually right there in the page — " +
+    "read them off it instead of asking the user to retype them. For an argument the tool wants but the " +
+    "page doesn't state outright (a category, a title, a date), choose the sensible value and say what " +
+    "you assumed. Today's date is " + today + ". Ask the user only when a required argument genuinely " +
+    "cannot be inferred and guessing it would be wrong — and then ask for that one thing, not for " +
+    "everything.\n\n" +
+    "Don't ask permission in prose and don't read the arguments back for approval. Before anything runs, " +
+    "the user sees a card with the tool name and the exact arguments and can decline it there. Just say " +
+    "in one short line which tool you're using and why, then make the call. If a call is declined, answer " +
+    "with what you already have and say plainly what you couldn't do. Never invent tool output — report " +
+    "only what a tool actually returned."
+  );
+}
 
 // ---- personalization ---------------------------------------------------
 
@@ -393,7 +407,7 @@ async function runWithTools(req, registry, onChunk, onTool, onConfirm, maxCalls)
   const { provider, apiKey, model } = await getActive();
   if (!apiKey) throw new Error("NO_API_KEY");
 
-  const base = { ...req, system: req.system + TOOLS_SYSTEM };
+  const base = { ...req, system: req.system + toolsDirective() };
   const turns = [...req.turns];
   let used = 0;
 
@@ -413,7 +427,7 @@ async function runWithTools(req, registry, onChunk, onTool, onConfirm, maxCalls)
       return answer;
     }
 
-    turns.push({ role: "tool_call", calls: toolCalls });
+    turns.push({ role: "tool_call", text: (text || "").trim(), calls: toolCalls });
     const results = [];
     for (const call of toolCalls) {
       // Any line the model wrote alongside the call explains why it wants it —
@@ -579,7 +593,10 @@ function geminiContents(turns) {
     if (t.role === "tool_call") {
       return {
         role: "model",
-        parts: t.calls.map((c) => ({ functionCall: { name: c.name, args: c.args || {} } })),
+        parts: [
+          ...(t.text ? [{ text: t.text }] : []),
+          ...t.calls.map((c) => ({ functionCall: { name: c.name, args: c.args || {} } })),
+        ],
       };
     }
     if (t.role === "tool_result") {
@@ -712,7 +729,7 @@ function groqMessages({ system, turns }) {
     if (t.role === "tool_call") {
       messages.push({
         role: "assistant",
-        content: null,
+        content: t.text || null,
         tool_calls: t.calls.map((c) => ({
           id: c.id,
           type: "function",
