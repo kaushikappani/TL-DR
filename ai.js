@@ -509,7 +509,7 @@ async function runWithTools(req, registry, onChunk, onTool, onConfirm, maxCalls)
     // Once the budget is spent, keep the declarations (history already refers
     // to them) but forbid further calls, which forces a final answer.
     const turnReq = { ...base, turns, tools: registry.defs, toolChoice: used < maxCalls ? "auto" : "none" };
-    const { text, toolCalls } =
+    const { text, toolCalls, parts } =
       provider === "groq"
         ? await groqTurn(apiKey, model, turnReq)
         : await geminiTurn(apiKey, model, turnReq);
@@ -521,7 +521,7 @@ async function runWithTools(req, registry, onChunk, onTool, onConfirm, maxCalls)
       return answer;
     }
 
-    turns.push({ role: "tool_call", text: (text || "").trim(), calls: toolCalls });
+    turns.push({ role: "tool_call", text: (text || "").trim(), calls: toolCalls, parts });
     const results = [];
     for (const call of toolCalls) {
       // Any line the model wrote alongside the call explains why it wants it —
@@ -685,6 +685,10 @@ function geminiTools(tools) {
 function geminiContents(turns) {
   return turns.map((t) => {
     if (t.role === "tool_call") {
+      // Gemini 3 attaches a thoughtSignature to each functionCall part and
+      // rejects the follow-up request if it doesn't come back untouched — so
+      // replay exactly what it sent rather than rebuilding from name + args.
+      if (Array.isArray(t.parts) && t.parts.length) return { role: "model", parts: t.parts };
       return {
         role: "model",
         parts: [
@@ -756,7 +760,8 @@ async function geminiTurn(apiKey, model, req) {
   }
 
   const parts = candidate?.content?.parts || [];
-  const text = parts.map((p) => p.text || "").join("").trim();
+  // `thought: true` parts are the model's own reasoning summary, not an answer.
+  const text = parts.filter((p) => !p.thought).map((p) => p.text || "").join("").trim();
   const toolCalls = parts
     .filter((p) => p.functionCall?.name)
     .map((p, i) => ({
@@ -765,7 +770,8 @@ async function geminiTurn(apiKey, model, req) {
       args: safeArgs(p.functionCall.args),
     }));
 
-  return { text, toolCalls };
+  // `parts` goes back out so the caller can replay this turn verbatim.
+  return { text, toolCalls, parts };
 }
 
 async function callGemini(apiKey, model, req) {
