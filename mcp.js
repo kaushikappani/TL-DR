@@ -18,12 +18,48 @@ const CONNECT_TIMEOUT_MS = 10000;
 // and a server that ties a login to the session would otherwise ask the user to
 // sign in again on every single question. If the server has expired it server
 // side, the next request 404s and we re-handshake.
-const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+//
+// A month, to match how long such a server can reasonably hold a login. This
+// cache is a ceiling, not a guess: discarding a session id that the server would
+// still have honoured throws away a live login, and for a server that keeps the
+// credential session-side there is no way to get it back but another sign-in.
+// Holding a dead id costs nothing by comparison — one 404, then a re-handshake.
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const TOOLS_TTL_MS = 2 * 60 * 1000;
 // Where persisted sessions live, keyed by server URL.
 const SESSION_STORE_KEY = "mcpSessions";
 // Tool results are fed straight back into the prompt — keep them bounded.
 const MAX_RESULT_CHARS = 8000;
+
+// ---- Server-issued credentials -----------------------------------------
+//
+// A session id is not a login. On a server that keeps the credential in the
+// session, everything it knows about the user dies with the process — restart
+// it and every stored session id 404s into a fresh, signed-out one, which is
+// how a year-long login turns into signing in again every few hours.
+//
+// So a server may hand back a credential of its own: a `_meta` entry on a tool
+// result saying "store this header and send it back every time". That survives
+// the server restarting, the worker being torn down, and the session going
+// away, because it is the client holding it. `_meta` is out-of-band by design —
+// only `content` is rendered into the prompt — so the credential never reaches
+// the model, and no page it summarises can talk it out of the conversation.
+const CREDENTIAL_META_KEY = "mcp.client/credential";
+const CREDENTIAL_STORE_KEY = "mcpCredentials";
+// Deliberately in chrome.storage.local: `sync` would push a bearer token for
+// someone's account through their Google profile to every machine they sign in
+// on, which is not a decision an MCP server gets to make on their behalf.
+const MAX_CREDENTIAL_CHARS = 4096;
+// A server may set its own header, but not the ones that carry the protocol or
+// that the browser treats specially.
+const RESERVED_HEADERS = new Set([
+  "content-type",
+  "accept",
+  "host",
+  "cookie",
+  "mcp-session-id",
+  "mcp-protocol-version",
+]);
 
 let nextId = 1;
 
@@ -31,6 +67,8 @@ let nextId = 1;
 const sessions = new Map();
 /** url -> { tools, expires } */
 const toolLists = new Map();
+/** url -> { header, value, expires } | null. Loaded once, then kept in step. */
+let credentials = null;
 
 /** chrome.storage.local, or nothing at all outside the extension. */
 function store() {
@@ -56,6 +94,125 @@ async function writeStoredSession(url, entry) {
   if (entry) all[url] = entry;
   else delete all[url];
   await area.set({ [SESSION_STORE_KEY]: all });
+}
+
+/** Load the credential map once, then serve it from memory. */
+async function loadCredentials() {
+  if (credentials) return credentials;
+  credentials = new Map();
+
+  const area = store();
+  if (!area) return credentials;
+
+  const raw = (await area.get(CREDENTIAL_STORE_KEY))[CREDENTIAL_STORE_KEY];
+  if (raw && typeof raw === "object") {
+    const now = Date.now();
+    for (const [url, entry] of Object.entries(raw)) {
+      if (entry?.header && entry?.value && (!entry.expires || entry.expires > now)) {
+        credentials.set(url, entry);
+      }
+    }
+  }
+  return credentials;
+}
+
+async function writeCredentials() {
+  const area = store();
+  if (!area) return;
+  await area.set({ [CREDENTIAL_STORE_KEY]: Object.fromEntries(credentials) });
+}
+
+/**
+ * Accept (or reject) a credential a server asked us to store.
+ *
+ * A server can only ever set a header on requests back to itself, so the blast
+ * radius is its own endpoint — but it should not be able to overwrite the
+ * headers the protocol runs on, or to hide a payload of arbitrary size in
+ * storage, so both are bounded here.
+ */
+function validCredential(cred) {
+  if (!cred || typeof cred !== "object") return null;
+
+  const header = String(cred.header || "").trim();
+  const value = String(cred.value || "");
+  if (!/^[A-Za-z0-9-]{1,64}$/.test(header)) return null;
+  if (RESERVED_HEADERS.has(header.toLowerCase())) return null;
+  if (!value || value.length > MAX_CREDENTIAL_CHARS) return null;
+
+  const ttl = Number(cred.expiresInMs);
+  return {
+    header,
+    value,
+    expires: Number.isFinite(ttl) && ttl > 0 ? Date.now() + ttl : 0,
+  };
+}
+
+/**
+ * Apply a `_meta` credential directive from a tool result.
+ * `null` is how a server says "that credential is dead" — on logout, say.
+ */
+async function saveCredential(url, directive) {
+  await loadCredentials();
+
+  if (directive === null) {
+    if (!credentials.delete(url)) return;
+    await writeCredentials();
+    return;
+  }
+
+  const cred = validCredential(directive);
+  if (!cred) {
+    console.warn("[TL;DR] MCP server sent an unusable credential; ignoring.");
+    return;
+  }
+
+  const current = credentials.get(url);
+  if (current && current.header === cred.header && current.value === cred.value) return;
+
+  credentials.set(url, cred);
+  await writeCredentials();
+}
+
+/** The credential header for a server, if one is stored and still good. */
+async function credentialHeader(url) {
+  const all = await loadCredentials();
+  const cred = all.get(url);
+  if (!cred) return null;
+
+  if (cred.expires && cred.expires <= Date.now()) {
+    credentials.delete(url);
+    await writeCredentials();
+    return null;
+  }
+  return { [cred.header]: cred.value };
+}
+
+/**
+ * Drop stored credentials for servers the user no longer has configured.
+ *
+ * Note that plain session expiry does *not* clear a credential — that is the
+ * whole point of holding one. Only the server saying so, or the user removing
+ * the server, takes it away.
+ */
+export async function pruneCredentials(keepUrls) {
+  await loadCredentials();
+  const keep = new Set(keepUrls || []);
+  let changed = false;
+  for (const url of [...credentials.keys()]) {
+    if (!keep.has(url)) {
+      credentials.delete(url);
+      changed = true;
+    }
+  }
+  if (changed) await writeCredentials();
+}
+
+// The options page and the service worker each hold their own copy. Whoever
+// writes, the other drops its cache rather than sending a stale header.
+if (typeof chrome !== "undefined" && chrome.storage?.onChanged) {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && changes[CREDENTIAL_STORE_KEY]) credentials = null;
+  });
 }
 
 /**
@@ -141,6 +298,10 @@ async function rpc(server, method, params, { notify = false, sessionId = "", tim
     : { jsonrpc: "2.0", id, method, params };
 
   const headers = {
+    // A stored credential goes on first, so a header the user typed into
+    // Settings for the same name still wins — an explicit override should not
+    // be silently overruled by something a server saved behind the scenes.
+    ...(await credentialHeader(url)),
     ...parseHeaders(server.headers),
     "Content-Type": "application/json",
     Accept: "application/json, text/event-stream",
@@ -232,14 +393,24 @@ async function connect(server) {
   return sessionId;
 }
 
-/** Drop any cached session for a server (after config edits or expiry). */
+/**
+ * Drop any cached session for a server (after config edits or expiry).
+ *
+ * Leaves the stored credential alone. A dead session is the ordinary case this
+ * whole mechanism exists to survive — throwing the credential away here would
+ * turn every server restart back into a sign-in, which is the bug.
+ */
 export function forget(server) {
   try {
     const url = checkUrl(server);
     sessions.delete(url);
     toolLists.delete(url);
-    writeStoredSession(url, null).catch(() => {});
+    // Returned, not fire-and-forget: connect() reads this same storage key, so
+    // a caller that re-connects without waiting can read back the very session
+    // it just discarded. See withSession.
+    return writeStoredSession(url, null).catch(() => {});
   } catch (_) {}
+  return Promise.resolve();
 }
 
 /** Run `fn` with a live session, retrying once if the session expired. */
@@ -249,7 +420,10 @@ async function withSession(server, fn) {
     return await fn(sessionId);
   } catch (e) {
     if (!e || !e.sessionExpired) throw e;
-    forget(server);
+    // Awaited: the stored session has to be gone before connect() looks, or the
+    // retry picks the dead id straight back out of storage and 404s again. That
+    // is the restarted-server path — the one case this retry exists for.
+    await forget(server);
     return fn(await connect(server));
   }
 }
@@ -307,6 +481,18 @@ export async function callTool(server, name, args) {
     rpc(server, "tools/call", { name, arguments: args || {} }, { sessionId })
   );
 
+  // Read before the content: a login tool hands back the credential that keeps
+  // this client signed in past the server's next restart, and it arrives here
+  // exactly once. `_meta` is not forwarded to the model.
+  const directive = result?._meta?.[CREDENTIAL_META_KEY];
+  if (directive !== undefined) {
+    try {
+      await saveCredential(checkUrl(server), directive);
+    } catch (e) {
+      console.warn("[TL;DR] couldn't store MCP credential:", e);
+    }
+  }
+
   let text = contentToText(result?.content);
   if (!text && result?.structuredContent) text = JSON.stringify(result.structuredContent);
   if (!text) text = "(the tool returned no content)";
@@ -316,9 +502,23 @@ export async function callTool(server, name, args) {
   return { text, isError: !!result?.isError };
 }
 
-/** Fresh handshake + tool list — backs the "Test" button on the options page. */
+/**
+ * Reachability + tool list — backs the "Test" button on the options page.
+ *
+ * Deliberately keeps any existing session. On a server that holds the login
+ * session-side, dropping the session is a silent logout, and "Test my
+ * connection" is the last button that should cost someone their sign-in. Only
+ * the tool list is re-fetched; a changed URL misses the cache on its own, and
+ * changed headers go out with the request either way. If the session really is
+ * dead, tools/list 404s and withSession re-handshakes — which is the thing Test
+ * was checking for anyway.
+ */
 export async function probe(server) {
-  forget(server);
+  try {
+    toolLists.delete(checkUrl(server));
+  } catch (_) {
+    // Invalid URL — listTools reports it properly in a moment.
+  }
   const tools = await listTools(server);
   return tools.map((t) => t.name);
 }

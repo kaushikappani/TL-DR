@@ -1,6 +1,6 @@
 // options.js
 import { PROVIDERS, MCP_DEFAULTS, getSettings } from "./ai.js";
-import { probe } from "./mcp.js";
+import { probe, pruneCredentials } from "./mcp.js";
 import { listMemories, forgetMemory, clearMemories } from "./memory.js";
 
 const els = {
@@ -397,6 +397,8 @@ els.saveBtn.addEventListener("click", async () => {
   const sel = modelSelect(provider);
   if (sel.value === CUSTOM && !addCustomModel(sel)) return;
 
+  const mcp = readMcp();
+
   try {
     await chrome.storage.sync.set({
       provider,
@@ -405,7 +407,7 @@ els.saveBtn.addEventListener("click", async () => {
       groqKey: els.groqKey.value.trim(),
       groqModel: chosenModel(els.groqModel) || PROVIDERS.groq.defaultModel,
       customModels,
-      mcp: readMcp(),
+      mcp,
       // personalization
       prefLength: getSegment(els.prefLength) || "standard",
       prefFormat: getSegment(els.prefFormat) || "bullets",
@@ -418,6 +420,14 @@ els.saveBtn.addEventListener("click", async () => {
     status(`Couldn't save: ${e.message}`, "error");
     return;
   }
+  // A server the user just deleted should not leave a live login token behind
+  // in local storage. Sessions expire on their own; credentials do not.
+  try {
+    await pruneCredentials(mcp.servers.map((sv) => sv.url));
+  } catch (_) {
+    // Nothing the user can act on, and the settings did save.
+  }
+
   status("Saved! You can close this tab.", "ok");
 });
 

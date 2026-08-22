@@ -1,10 +1,17 @@
 // memory.js
 // Long-term memory: small durable notes the model decides to keep, so facts it
-// learned once — an auth token, an account id, a preference — survive past the
+// learned once — an account id, a workspace, a preference — survive past the
 // conversation that produced them.
 //
-// Stored in chrome.storage.local rather than .sync: it holds credentials, so it
-// stays on this device, and the quota is megabytes instead of 100 KB.
+// Explicitly not for credentials. Everything in here is pasted into the system
+// prompt of every later request and sent to the AI provider each time, so a
+// token saved once leaks on every summary the user asks for afterwards. Staying
+// signed in is the transport's job, not the model's: an MCP server can hand the
+// client a credential out-of-band (see mcp.js) that no prompt ever sees.
+// looksLikeSecret() below turns that from advice into a rule.
+//
+// Stored in chrome.storage.local rather than .sync, so it stays on this device
+// and the quota is megabytes instead of 100 KB.
 
 const STORE_KEY = "memories";
 
@@ -28,6 +35,33 @@ const STATUS_VALUE =
 export function looksLikeStatus(value) {
   const bare = String(value || "").trim().replace(/[.!"']+$/, "");
   return STATUS_VALUE.test(bare);
+}
+
+// Key names that announce a secret whatever the value turns out to be.
+const SECRET_KEY =
+  /(^|[\s_-])(token|secret|password|passwd|pwd|apikey|api[\s_-]?key|jwt|bearer|credential|auth|cookie|private[\s_-]?key|refresh|session[\s_-]?id)([\s_-]|$)/i;
+
+// Values that are unmistakably a credential rather than an identifier.
+const JWT_VALUE = /^ey[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\./;
+const BEARER_VALUE = /^(bearer|basic|token)\s+\S/i;
+// A long unbroken run of token characters. The floor is deliberately high: a
+// Mongo ObjectId is 24 characters and someone's account id has every right to
+// be saved.
+const OPAQUE_VALUE = /^[A-Za-z0-9_\-.=+/]{40,}$/;
+
+/**
+ * True when saving this would put a credential into every future prompt.
+ *
+ * Deliberately errs towards refusing. The cost of a false positive is the model
+ * asking for an id again; the cost of a false negative is a live token shipped
+ * to Gemini or Groq on every page the user summarises from now on.
+ */
+export function looksLikeSecret(key, value) {
+  const name = String(key || "").trim();
+  const bare = String(value || "").trim();
+  if (!bare) return false;
+  if (SECRET_KEY.test(name)) return true;
+  return JWT_VALUE.test(bare) || BEARER_VALUE.test(bare) || OPAQUE_VALUE.test(bare);
 }
 
 /** chrome.storage.local, or nothing at all outside the extension. */
@@ -57,9 +91,17 @@ export async function listMemories() {
   const items = (Array.isArray(raw) ? raw : []).map(clean).filter(Boolean);
 
   const now = Date.now();
-  // Status flags saved by older builds get swept out here rather than lingering
-  // in the prompt until someone notices them in Settings.
-  const live = items.filter((m) => (!m.expiresAt || m.expiresAt > now) && !looksLikeStatus(m.value));
+  // Status flags and credentials saved by older builds get swept out here
+  // rather than lingering in the prompt until someone notices them in Settings.
+  // For credentials the sweep is the point: the previous build saved tokens
+  // deliberately, and every one still in there is going to the AI provider on
+  // every request.
+  const live = items.filter(
+    (m) =>
+      (!m.expiresAt || m.expiresAt > now) &&
+      !looksLikeStatus(m.value) &&
+      !looksLikeSecret(m.key, m.value)
+  );
   if (live.length !== items.length) await area.set({ [STORE_KEY]: live });
 
   return live.sort((a, b) => b.savedAt - a.savedAt);
@@ -84,7 +126,15 @@ export async function saveMemory({ key, value, expiresInDays }) {
   if (looksLikeStatus(item.value)) {
     throw new Error(
       `"${item.value}" is a status, not a value — it can't be passed to a tool and it goes stale on ` +
-        "its own. Save the token, id or setting itself, or save nothing and check the state with a tool."
+        "its own. Save the id or setting itself, or save nothing and check the state with a tool."
+    );
+  }
+  if (looksLikeSecret(item.key, item.value)) {
+    throw new Error(
+      `"${item.key}" looks like a credential, and memory is the wrong place for one — everything saved ` +
+        "here is replayed into every later prompt and sent to the AI provider each time. Signing in " +
+        "already persists between conversations without you holding the secret; if a tool says you are " +
+        "not logged in, run its sign-in flow again rather than remembering a token."
     );
   }
 
@@ -129,8 +179,8 @@ export function memoryBlock(items) {
   return (
     "\n\nTHINGS YOU REMEMBERED EARLIER (from previous conversations with this user):\n" +
     lines.join("\n") +
-    "\nUse these when they're relevant — pass a saved token, id or account detail " +
-    "straight into a tool call instead of asking the user for it again. If one turns " +
-    "out to be stale or rejected, forget it and get a fresh one."
+    "\nUse these when they're relevant — pass a saved id or account detail straight " +
+    "into a tool call instead of asking the user for it again. If one turns out to be " +
+    "stale or rejected, forget it and get a fresh one."
   );
 }

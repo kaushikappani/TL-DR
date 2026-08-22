@@ -183,15 +183,13 @@ function toolsDirective() {
     "everything.\n\n" +
     "You have a memory that outlives this conversation. Save a thing with memory_save when it is " +
     "a concrete value you would otherwise have to ask the user for again and could pass straight back " +
-    "into a tool call: an auth token, an API key, an account or session id, a workspace or project " +
-    "name, a preference the user stated.\n\n" +
-    "Credentials are not optional: the moment a token, API key, session identifier or login code " +
-    "appears — returned by a tool, produced by a sign-in flow, or pasted by the user — save it with " +
-    "memory_save straight away, in the same turn, without being asked and without checking first " +
-    "whether it is needed. This conversation is thrown away; a credential left only in the chat is a " +
-    "credential the user has to go and fetch again. Store the value exactly as given, under a stable " +
-    "key naming the service (\"noteit_token\"), and set expires_in_days when you know the lifetime. " +
-    "Re-using the key on a refresh replaces the old one.\n\n" +
+    "into a tool call: an account or workspace id, a project name, a preference the user stated.\n\n" +
+    "Never save a secret. Not a token, an API key, a session id, a login code, a password, or anything " +
+    "out of a sign-in flow — whatever you remember is pasted into the prompt of every request after " +
+    "this one and sent to the AI provider each time, so a credential saved once leaks continuously. " +
+    "Staying signed in is not your job: the extension and the server keep the login between " +
+    "conversations without either of you handling the secret. If a sign-in flow shows you a token " +
+    "anyway, leave it where it is and don't repeat it back.\n\n" +
     "Never save a status, a flag, or a claim about the state of things — \"logged in\", \"connected\", " +
     "\"already done\", \"setup complete\". Whether something is still true is for a tool to tell you at " +
     "the time; a remembered flag only goes stale and misleads you. If a tool says the user isn't " +
@@ -490,13 +488,13 @@ const MEMORY_TOOLS = [
   {
     name: "memory_save",
     description:
-      "Remember something for future conversations — an auth token, an account or session id, a " +
-      "workspace, a stated preference. Re-using a key overwrites what was there, which is how you " +
-      "refresh a token.",
+      "Remember a non-secret detail for future conversations — an account or workspace id, a project " +
+      "name, a stated preference. Never a token, key, password or login code: saved values are replayed " +
+      "into every later prompt. Re-using a key overwrites what was there.",
     schema: {
       type: "object",
       properties: {
-        key: { type: "string", description: 'Short stable name, e.g. "noteit_token".' },
+        key: { type: "string", description: 'Short stable name, e.g. "default_workspace".' },
         value: { type: "string", description: "What to remember." },
         expires_in_days: { type: "number", description: "Optional lifetime in days for things that go stale." },
       },
